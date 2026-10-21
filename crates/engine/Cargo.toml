@@ -1,0 +1,15 @@
+[package]
+name = "studio-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+studio-core.workspace = true
+studio-segmentation.workspace = true
+studio-audio.workspace = true
+
+[lints]
+workspace = true

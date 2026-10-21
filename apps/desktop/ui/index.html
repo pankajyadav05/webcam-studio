@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Webcam Studio</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="preview" aria-labelledby="preview-title">
+        <h1 id="preview-title">Preview</h1>
+        <p class="hint">Preview (effects other than framing are applied in the virtual camera output)</p>
+        <div class="frame">
+          <video id="video" autoplay muted playsinline></video>
+          <p id="preview-message" class="overlay" role="status"></p>
+        </div>
+        <label class="field">
+          <span>Camera</span>
+          <select id="camera"></select>
+        </label>
+      </section>
+
+      <section class="controls" aria-labelledby="controls-title">
+        <h2 id="controls-title">Settings</h2>
+
+        <fieldset>
+          <legend>Framing</legend>
+          <label class="field">
+            <span>Zoom <output id="zoom-out"></output></span>
+            <input id="zoom" type="range" min="1" max="4" step="0.05" />
+          </label>
+          <label class="field">
+            <span>Pan left to right <output id="pan-x-out"></output></span>
+            <input id="pan-x" type="range" min="-1" max="1" step="0.05" />
+          </label>
+          <label class="field">
+            <span>Pan up to down <output id="pan-y-out"></output></span>
+            <input id="pan-y" type="range" min="-1" max="1" step="0.05" />
+          </label>
+          <label class="check">
+            <input id="mirror" type="checkbox" />
+            <span>Mirror</span>
+          </label>
+          <label class="check disabled">
+            <input id="auto-frame" type="checkbox" disabled />
+            <span>Auto-frame (coming soon)</span>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Background</legend>
+          <label class="field">
+            <span>Effect</span>
+            <select id="background-mode">
+              <option value="none">None</option>
+              <option value="blur">Blur</option>
+              <option value="replace">Replace</option>
+            </select>
+          </label>
+          <label class="field" id="blur-field" hidden>
+            <span>Blur radius <output id="blur-out"></output></span>
+            <input id="blur-radius" type="range" min="1" max="50" step="1" />
+          </label>
+          <label class="field" id="image-field" hidden>
+            <span>Image path</span>
+            <input id="image-path" type="text" placeholder="/path/to/background.jpg" spellcheck="false" />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Microphone</legend>
+          <label class="field">
+            <span>Noise removal</span>
+            <select id="noise">
+              <option value="off">Off</option>
+              <option value="light">Light</option>
+              <option value="strong">Strong</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <p id="error" class="error" role="alert" hidden></p>
+      </section>
+    </main>
+
+    <footer id="platform" class="platform">Reading platform details…</footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

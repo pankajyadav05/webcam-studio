@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/desktop/src-tauri"]
+# The desktop app needs system webview libraries, so it is left out of the default build.
+default-members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+license = "GPL-3.0-or-later"
+version = "0.1.0"
+repository = "https://github.com/pankajyadav05/webcam-studio"
+rust-version = "1.85"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+log = "0.4"
+
+studio-core = { path = "crates/core" }
+studio-engine = { path = "crates/engine" }
+studio-segmentation = { path = "crates/segmentation" }
+studio-audio = { path = "crates/audio" }
+studio-vdevice = { path = "crates/vdevice" }
+studio-vdevice-linux = { path = "crates/vdevice-linux" }
+studio-vdevice-windows = { path = "crates/vdevice-windows" }
+studio-vdevice-macos = { path = "crates/vdevice-macos" }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[profile.release]
+lto = "thin"

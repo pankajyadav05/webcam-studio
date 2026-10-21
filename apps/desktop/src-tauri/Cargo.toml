@@ -1,0 +1,23 @@
+[package]
+name = "webcam-studio-desktop"
+description = "Desktop app for Webcam Studio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+studio-core.workspace = true
+studio-engine.workspace = true
+studio-vdevice.workspace = true
+
+[lints]
+workspace = true
