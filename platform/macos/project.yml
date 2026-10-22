@@ -1,0 +1,56 @@
+# XcodeGen spec for the Webcam Studio camera extension.
+#
+#   cd platform/macos && xcodegen generate
+#
+# This writes WebcamStudio.xcodeproj next to this file. That project is generated, is not
+# committed, and is listed in .gitignore. Usually you do not run xcodegen yourself:
+# scripts/build-extension.sh does it and then runs xcodebuild.
+name: WebcamStudio
+
+options:
+  deploymentTarget:
+    macOS: "14.0"
+
+settings:
+  base:
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Signing is off by default, so this builds on any Mac and in CI. The extension is
+    # signed afterwards by scripts/bundle-app.sh, once it sits inside the app.
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: "-"
+    # Your Apple Developer team ID goes here (ten letters and digits), for example
+    # ABCDE12345. It fills in $(TeamIdentifierPrefix) in the Info.plist and entitlements.
+    # scripts/build-extension.sh also reads it from the DEVELOPMENT_TEAM environment variable.
+    # DEVELOPMENT_TEAM: ABCDE12345
+
+targets:
+  CameraExtension:
+    type: system-extension
+    platform: macOS
+    sources:
+      - path: CameraExtension
+        excludes:
+          - "README.md"
+          - "Info.plist"
+          - "*.entitlements"
+    dependencies:
+      - sdk: CoreMediaIO.framework
+      - sdk: CoreMedia.framework
+      - sdk: CoreVideo.framework
+      - sdk: CoreGraphics.framework
+      - sdk: CoreText.framework
+      - sdk: IOSurface.framework
+    settings:
+      base:
+        PRODUCT_NAME: CameraExtension
+        PRODUCT_BUNDLE_IDENTIFIER: dev.pankajyadav.webcamstudio.CameraExtension
+        INFOPLIST_FILE: CameraExtension/Info.plist
+        GENERATE_INFOPLIST_FILE: "NO"
+        CODE_SIGN_ENTITLEMENTS: CameraExtension/CameraExtension.entitlements
+        ENABLE_HARDENED_RUNTIME: "YES"
+        # Build for the Mac doing the build. Add ARCHS: "arm64 x86_64" for a universal build.
+        ONLY_ACTIVE_ARCH: "YES"

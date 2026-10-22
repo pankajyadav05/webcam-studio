@@ -1,0 +1,84 @@
+name: macOS
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# This workflow builds the Mac app with the camera extension inside it. The result is
+# NOT signed with an Apple Developer ID and is not notarized, so macOS will not activate
+# the camera extension from this build. It proves the Swift code compiles and that the
+# bundle has the right shape. See docs/macos.md for real signing.
+
+jobs:
+  build:
+    name: Build app and camera extension
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build the camera extension
+        id: extension
+        run: |
+          set -euo pipefail
+          ext="$(platform/macos/scripts/build-extension.sh)"
+          echo "path=${ext}" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cache the Tauri CLI
+        id: tauri-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: cargo-tauri-2-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install the Tauri CLI
+        if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build the app
+        # Run inside src-tauri so tauri.conf.json is found and "../ui" resolves to
+        # apps/desktop/ui. The workspace puts the output in the top-level target folder.
+        working-directory: apps/desktop/src-tauri
+        run: cargo tauri build --bundles app
+
+      - name: Put the extension in the app and zip it
+        env:
+          EXTENSION: ${{ steps.extension.outputs.path }}
+        run: |
+          set -euo pipefail
+          platform/macos/scripts/bundle-app.sh \
+            "target/release/bundle/macos/Webcam Studio.app" \
+            "${EXTENSION}" \
+            "${GITHUB_WORKSPACE}/Webcam-Studio-macOS-unsigned.zip"
+
+      - name: Verify the bundle
+        run: |
+          set -euo pipefail
+          app="target/release/bundle/macos/Webcam Studio.app"
+          ext="${app}/Contents/Library/SystemExtensions/dev.pankajyadav.webcamstudio.CameraExtension.systemextension"
+          test -d "${ext}"
+          plutil -lint "${app}/Contents/Info.plist" "${ext}/Contents/Info.plist"
+          echo "--- app"
+          codesign -dv --verbose=2 "${app}"
+          echo "--- extension"
+          codesign -dv --verbose=2 "${ext}"
+          echo "--- extension Info.plist"
+          plutil -p "${ext}/Contents/Info.plist"
+          echo "--- bundle tree"
+          find "${app}" -maxdepth 6 | sort
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Webcam-Studio-macOS-unsigned
+          path: Webcam-Studio-macOS-unsigned.zip
+          retention-days: 14
+          if-no-files-found: error

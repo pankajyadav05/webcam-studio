@@ -2,14 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Camera extensions run in the app sandbox. -->
+	<!-- Camera extensions must run in the app sandbox. -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<!-- TODO: placeholder app group. Use the same group in the host app, so the app and
-	     the extension can share state. -->
+	<!-- Must match the start of CMIOExtensionMachServiceName in Info.plist. The team ID
+	     prefix is filled in at signing time. -->
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>$(TeamIdentifierPrefix)group.com.example.webcamstudio</string>
+		<string>$(TeamIdentifierPrefix)dev.pankajyadav.webcamstudio</string>
 	</array>
 </dict>
 </plist>

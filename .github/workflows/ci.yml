@@ -7,8 +7,8 @@ on:
 permissions:
   contents: read
 
-# Note: the macOS Camera Extension (an Xcode target) is not built in CI yet.
-# These jobs build and test the Rust workspace only.
+# These jobs build and test the Rust workspace only. The macOS Camera Extension (an Xcode
+# target) and the app bundle are built by .github/workflows/macos.yml.
 
 jobs:
   check:

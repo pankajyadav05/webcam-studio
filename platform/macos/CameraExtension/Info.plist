@@ -21,13 +21,15 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>12.3</string>
+	<string>14.0</string>
 	<key>CMIOExtension</key>
 	<dict>
-		<!-- TODO: placeholder. The name must start with an app group ID that is in this
-		     extension's entitlements, for example "TEAMID.group.com.example.webcamstudio". -->
+		<!-- The Mach service name must start with an app group ID from this extension's
+		     entitlements. $(TeamIdentifierPrefix) is "TEAMID." and is filled in when a team
+		     is set (DEVELOPMENT_TEAM in platform/macos/project.yml). In unsigned builds it
+		     is empty and the extension cannot be activated anyway. -->
 		<key>CMIOExtensionMachServiceName</key>
-		<string>$(TeamIdentifierPrefix)com.example.webcamstudio.CameraExtension</string>
+		<string>$(TeamIdentifierPrefix)dev.pankajyadav.webcamstudio</string>
 	</dict>
 </dict>
 </plist>

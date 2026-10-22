@@ -1,3 +1,7 @@
 target/
 node_modules/
 .DS_Store
+
+# macOS camera extension: generated Xcode project and build output
+platform/macos/*.xcodeproj/
+platform/macos/build/

@@ -1,7 +1,8 @@
 // Entry point of the camera extension process.
 //
 // macOS starts this process when an app first asks for the camera. It creates the
-// provider and then hands control to the CoreMediaIO service loop.
+// provider (which creates the device and its streams) and then hands control to the
+// CoreMediaIO service loop.
 
 import CoreMediaIO
 import Foundation
