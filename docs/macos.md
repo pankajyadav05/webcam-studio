@@ -28,7 +28,7 @@ The Swift source is in `platform/macos/CameraExtension/`. It is built with Xcode
 
 You need:
 
-- A Mac with Xcode 15 or newer (the command line tools alone are not enough).
+- A Mac with Xcode 16 or newer (the command line tools alone are not enough).
 - Homebrew, then `brew install xcodegen`.
 - Rust (stable), from <https://rustup.rs>.
 - The Tauri command line tool: `cargo install tauri-cli --version "^2" --locked`.
