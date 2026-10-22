@@ -1,0 +1,60 @@
+[package]
+name = "studio-capture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+studio-core.workspace = true
+# Only for the name and ID of our own virtual camera, so it can be left out of the list.
+studio-vdevice-macos.workspace = true
+serde.workspace = true
+
+# Everything below is macOS only, so Linux and Windows builds do not download or build it.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = [
+    "NSArray",
+    "NSDictionary",
+    "NSEnumerator",
+    "NSError",
+    "NSObject",
+    "NSString",
+    "NSValue",
+    "objc2-core-foundation",
+] }
+objc2-core-foundation.workspace = true
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "AVCaptureDevice",
+    "AVCaptureInput",
+    "AVCaptureOutputBase",
+    "AVCaptureSession",
+    "AVCaptureSessionPreset",
+    "AVCaptureVideoDataOutput",
+    "AVMediaFormat",
+    "objc2-core-media",
+    "objc2-core-video",
+    "dispatch2",
+    "block2",
+] }
+objc2-core-media = { workspace = true, features = [
+    "objc2-core-video",
+    "CMSampleBuffer",
+    "CMFormatDescription",
+    "CMTime",
+] }
+objc2-core-video = { workspace = true, features = [
+    "CVBase",
+    "CVBuffer",
+    "CVImageBuffer",
+    "CVPixelBuffer",
+    "CVReturn",
+] }
+dispatch2.workspace = true
+block2.workspace = true
+
+[lints]
+workspace = true

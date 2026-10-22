@@ -9,5 +9,43 @@ rust-version.workspace = true
 [dependencies]
 studio-core.workspace = true
 
+# Everything below is macOS only, so Linux and Windows builds do not download or build it.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["NSString", "NSError"] }
+objc2-core-foundation = { workspace = true, features = [
+    "CFBase",
+    "CFString",
+    "CFNumber",
+    "CFDictionary",
+] }
+objc2-core-media = { workspace = true, features = [
+    "objc2-core-video",
+    "CMSampleBuffer",
+    "CMSimpleQueue",
+    "CMFormatDescription",
+    "CMTime",
+    "CMSync",
+] }
+objc2-core-media-io = { version = "0.3", default-features = false, features = [
+    "std",
+    "CMIOHardware",
+    "CMIOHardwareObject",
+    "CMIOHardwareSystem",
+    "CMIOHardwareDevice",
+    "CMIOHardwareStream",
+    "objc2-core-media",
+] }
+objc2-core-video = { workspace = true, features = [
+    "CVBase",
+    "CVBuffer",
+    "CVImageBuffer",
+    "CVPixelBuffer",
+    "CVPixelBufferPool",
+    "CVReturn",
+] }
+objc2-system-extensions = { version = "0.3", default-features = false, features = ["std", "dispatch2"] }
+dispatch2.workspace = true
+
 [lints]
 workspace = true
