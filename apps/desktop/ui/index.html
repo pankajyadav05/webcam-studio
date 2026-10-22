@@ -19,7 +19,7 @@
         </svg>
         <h1>Webcam Studio</h1>
       </div>
-      <p class="topbar-note">Preview shows framing only. Other effects are applied in the camera output.</p>
+      <p class="topbar-note" id="preview-note">Preview shows framing only. Other effects are applied in the camera output.</p>
     </header>
 
     <main class="layout">
@@ -56,6 +56,30 @@
       </section>
 
       <aside class="rail" aria-label="Settings">
+        <section class="group vcam" id="vcam-group" aria-labelledby="g-vcam" data-state="unsupported">
+          <h2 id="g-vcam">Virtual camera</h2>
+
+          <button type="button" id="vcam-toggle" class="btn btn-primary btn-block" aria-pressed="false" disabled>Start virtual camera</button>
+          <p class="vcam-camera" id="vcam-camera" hidden>
+            <span class="vcam-camera-key">Camera</span>
+            <span class="vcam-camera-name" id="vcam-camera-name"></span>
+          </p>
+          <p class="vcam-line" id="vcam-line" role="status"></p>
+
+          <div class="setup" id="vcam-setup" hidden>
+            <p class="setup-title">Set up the camera</p>
+            <ol class="steps">
+              <li class="step" id="step-install">
+                <button type="button" id="vcam-install" class="btn btn-step">1. Install the camera</button>
+              </li>
+              <li class="step" id="step-allow">
+                <button type="button" id="vcam-allow" class="btn btn-step">2. Allow it in System Settings</button>
+              </li>
+            </ol>
+            <p class="field-hint setup-note">Needs a signed build. See docs/macos.md.</p>
+          </div>
+        </section>
+
         <section class="group" aria-labelledby="g-camera">
           <h2 id="g-camera">Camera</h2>
 
@@ -203,7 +227,7 @@
         <span class="status-sep" aria-hidden="true"></span>
         <span class="status-item"><span class="status-key">Camera backend</span> <span class="mono" id="platform-backend">…</span></span>
       </p>
-      <p class="pill" id="vcam-status"><span class="pill-dot" aria-hidden="true"></span>Virtual camera: not available yet</p>
+      <p class="pill" id="vcam-status" data-state="unknown"><span class="pill-dot" aria-hidden="true"></span><span id="vcam-status-text">Virtual camera: checking…</span></p>
     </footer>
 
     <script src="main.js"></script>

@@ -96,6 +96,16 @@ The trade-off: System Integrity Protection is a core security feature of macOS. 
 
 Treat these steps as a guide, not a promise. Apple changes the details between macOS releases, and the GitHub Actions build has not been tested on a Mac with activation turned on.
 
+## Use it from the app
+
+1. Move `Webcam Studio.app` to `/Applications` and open it.
+2. In the Virtual camera section, press **Install the camera**. macOS asks you to allow it.
+3. Press **Allow it in System Settings**. This opens the page where the extension is approved (see below).
+4. Pick your real webcam and press **Start virtual camera**. The first time, macOS asks for camera access.
+5. In Zoom, FaceTime or a browser, choose **Webcam Studio Camera**.
+
+While it runs, the panel shows the frame rate and how many frames were dropped. The status at the bottom of the window shows the real state: not installed, needs approval, ready, on, or error. When the app is closed, meeting apps see a placeholder card that says Webcam Studio is not running.
+
 ## Approve the extension
 
 The first time the app asks to install the camera, macOS shows a message and you must approve it:

@@ -43,6 +43,19 @@ const els = {
   error: $("error"),
   platformOs: $("platform-os"),
   platformBackend: $("platform-backend"),
+  previewNote: $("preview-note"),
+  vcamGroup: $("vcam-group"),
+  vcamToggle: $("vcam-toggle"),
+  vcamCamera: $("vcam-camera"),
+  vcamCameraName: $("vcam-camera-name"),
+  vcamLine: $("vcam-line"),
+  vcamSetup: $("vcam-setup"),
+  vcamInstall: $("vcam-install"),
+  vcamAllow: $("vcam-allow"),
+  stepInstall: $("step-install"),
+  stepAllow: $("step-allow"),
+  vcamPill: $("vcam-status"),
+  vcamPillText: $("vcam-status-text"),
 };
 
 // ---------------------------------------------------------------------------
@@ -175,7 +188,10 @@ function send() {
     },
     (err) => {
       if (id === requestSeq) {
-        showError(`Could not save the settings: ${err}`);
+        // The engine words its own errors (for example a background picture that would not
+        // open). Anything else gets a general lead-in.
+        const text = String(err);
+        showError(text.startsWith("Could not") ? text : `Could not save the settings: ${text}`);
       }
     },
   );
@@ -741,6 +757,12 @@ async function refreshCameraList() {
   const devices = await navigator.mediaDevices.enumerateDevices();
   const cameras = devices.filter((d) => d.kind === "videoinput");
   const active = els.video.srcObject?.getVideoTracks()[0]?.getSettings().deviceId;
+  vcam.previewDevices = cameras;
+  if (vcam.cameras.length > 0) {
+    // The picker lists the native cameras. Make the preview show the one chosen there.
+    syncPreviewToSelection(active);
+    return;
+  }
   els.camera.replaceChildren(
     ...cameras.map((cam, i) => {
       const option = document.createElement("option");
@@ -934,17 +956,281 @@ async function showPlatform() {
 }
 
 // ---------------------------------------------------------------------------
+// Virtual camera: native camera choice, start and stop, setup steps, live status
+// ---------------------------------------------------------------------------
+
+const POLL_MS = 1000;
+const PILL_TEXT = {
+  running: "Virtual camera: on",
+  ready: "Virtual camera: ready",
+  needs_approval: "Virtual camera: needs approval",
+  not_installed: "Virtual camera: not installed",
+  unsupported: "Virtual camera: not available on this system",
+  error: "Virtual camera: error",
+};
+const NOTE_IDLE = "Preview shows framing only. Other effects are applied in the camera output.";
+const NOTE_RUNNING = "Preview shows framing only. The virtual camera carries all effects.";
+
+const vcam = {
+  status: null,
+  cameras: [], // native cameras from `list_native_cameras`
+  previewDevices: [], // getUserMedia devices, used for the preview only
+  selectedId: "",
+  previewSynced: false,
+  busy: "", // "starting" or "stopping" while a command is in flight
+  statusSeq: 0,
+  timer: 0,
+};
+
+function tauriEvents() {
+  return window.__TAURI__ && window.__TAURI__.event;
+}
+
+function rememberCamera(id) {
+  try {
+    localStorage.setItem("native-camera", id);
+  } catch (err) {
+    // Storage may be blocked. The choice still holds for this session.
+  }
+}
+
+function rememberedCamera() {
+  try {
+    return localStorage.getItem("native-camera") || "";
+  } catch (err) {
+    return "";
+  }
+}
+
+function selectedCamera() {
+  return vcam.cameras.find((cam) => cam.id === vcam.selectedId) || null;
+}
+
+async function loadNativeCameras() {
+  try {
+    const list = await invoke("list_native_cameras");
+    vcam.cameras = Array.isArray(list) ? list : [];
+  } catch (err) {
+    // Not available on this system: the picker keeps listing the preview cameras.
+    vcam.cameras = [];
+  }
+  if (vcam.cameras.length > 0) {
+    const wanted = rememberedCamera();
+    vcam.selectedId = vcam.cameras.some((cam) => cam.id === wanted) ? wanted : vcam.cameras[0].id;
+    els.camera.replaceChildren(
+      ...vcam.cameras.map((cam) => {
+        const option = document.createElement("option");
+        option.value = cam.id;
+        option.textContent = cam.name;
+        return option;
+      }),
+    );
+    els.camera.value = vcam.selectedId;
+  }
+  renderVcam();
+}
+
+// The preview comes from the web view, which names cameras differently from the native
+// side. The two are matched by name.
+function previewDeviceFor(cam) {
+  if (!cam) {
+    return undefined;
+  }
+  const match = vcam.previewDevices.find((d) => d.label === cam.name);
+  return match ? match.deviceId : undefined;
+}
+
+function previewDeviceForSelection() {
+  return previewDeviceFor(selectedCamera());
+}
+
+// Once the preview camera names are known, switch the preview to the chosen camera (once).
+function syncPreviewToSelection(activeDeviceId) {
+  if (vcam.previewSynced) {
+    return;
+  }
+  vcam.previewSynced = true;
+  const wanted = previewDeviceForSelection();
+  if (wanted && wanted !== activeDeviceId) {
+    startPreview(wanted);
+  }
+}
+
+function onCameraPicked() {
+  if (vcam.cameras.length === 0) {
+    startPreview(els.camera.value);
+    return;
+  }
+  vcam.selectedId = els.camera.value;
+  rememberCamera(vcam.selectedId);
+  renderVcam();
+  startPreview(previewDeviceForSelection());
+}
+
+function setPill(state, text, title) {
+  els.vcamPill.dataset.state = state;
+  els.vcamPillText.textContent = text;
+  els.vcamPill.title = title || "";
+}
+
+function statText(status) {
+  const fps = Math.round(Number(status.fps) || 0);
+  return `${fps} fps · ${status.frames_dropped} dropped`;
+}
+
+function renderVcam() {
+  const status = vcam.status;
+  const state = status ? status.state : "unknown";
+  const running = state === "running";
+  els.vcamGroup.dataset.state = state;
+
+  // Button
+  let label = running ? "Stop virtual camera" : "Start virtual camera";
+  if (vcam.busy === "starting") {
+    label = "Starting…";
+  } else if (vcam.busy === "stopping") {
+    label = "Stopping…";
+  }
+  els.vcamToggle.textContent = label;
+  els.vcamToggle.setAttribute("aria-pressed", String(running));
+  const canStart = (state === "ready" || state === "error") && !!selectedCamera();
+  els.vcamToggle.disabled = !!vcam.busy || !(running || canStart);
+  els.vcamToggle.title = !running && state === "ready" && !selectedCamera() ? "No camera was found." : "";
+
+  // The camera in use
+  const cam = selectedCamera();
+  const shownName = running && status.camera_name ? status.camera_name : cam ? cam.name : "";
+  els.vcamCamera.hidden = !shownName && state !== "ready";
+  els.vcamCameraName.textContent = shownName || "No camera found";
+
+  // The picker is locked while the camera runs, because the choice only applies at start.
+  els.camera.disabled = running || !!vcam.busy;
+  els.camera.title = running ? "Stop the virtual camera to change the camera." : "";
+  if (running && status.camera_name) {
+    const live = vcam.cameras.find((c) => c.name === status.camera_name);
+    if (live && live.id !== vcam.selectedId) {
+      vcam.selectedId = live.id;
+      els.camera.value = live.id;
+    }
+  }
+
+  // One line: the live numbers while running, otherwise what is going on.
+  els.vcamLine.textContent = !status ? "" : running ? statText(status) : status.message;
+  els.vcamLine.classList.toggle("is-stat", running);
+  els.vcamLine.classList.toggle("mono", running);
+  els.vcamLine.title = running && status.message ? status.message : "";
+
+  // Setup steps
+  const setup = state === "not_installed" || state === "needs_approval";
+  els.vcamSetup.hidden = !setup;
+  els.stepInstall.classList.toggle("is-done", state === "needs_approval");
+  els.stepInstall.classList.toggle("is-active", state === "not_installed");
+  els.stepAllow.classList.toggle("is-active", state === "needs_approval");
+
+  // Status bar and preview label
+  if (status) {
+    setPill(state, PILL_TEXT[state] || "Virtual camera: error", status.message);
+  }
+  els.previewNote.textContent = running ? NOTE_RUNNING : NOTE_IDLE;
+}
+
+async function refreshStatus() {
+  const id = ++vcam.statusSeq;
+  try {
+    const status = await invoke("virtual_camera_status");
+    if (id !== vcam.statusSeq) {
+      return;
+    }
+    vcam.status = status;
+  } catch (err) {
+    if (id !== vcam.statusSeq) {
+      return;
+    }
+    vcam.status = { state: "error", message: `Could not read the virtual camera status: ${err}`, fps: 0, frames_sent: 0, frames_dropped: 0, camera_name: null };
+  }
+  renderVcam();
+}
+
+// Poll only while the window can be seen.
+function startPolling() {
+  if (!vcam.timer) {
+    vcam.timer = setInterval(refreshStatus, POLL_MS);
+  }
+}
+
+function stopPolling() {
+  clearInterval(vcam.timer);
+  vcam.timer = 0;
+}
+
+async function toggleVirtualCamera() {
+  if (vcam.busy) {
+    return;
+  }
+  const running = vcam.status && vcam.status.state === "running";
+  vcam.busy = running ? "stopping" : "starting";
+  renderVcam();
+  try {
+    if (running) {
+      await invoke("stop_virtual_camera");
+    } else {
+      await invoke("start_virtual_camera", { cameraId: vcam.selectedId });
+    }
+    showError("");
+  } catch (err) {
+    showError(String(err));
+  }
+  vcam.busy = "";
+  await refreshStatus();
+}
+
+async function runSetupStep(command) {
+  try {
+    await invoke(command);
+  } catch (err) {
+    showError(String(err));
+  }
+  refreshStatus();
+}
+
+function bindVirtualCamera() {
+  els.vcamToggle.addEventListener("click", toggleVirtualCamera);
+  els.vcamInstall.addEventListener("click", () => runSetupStep("install_camera_extension"));
+  els.vcamAllow.addEventListener("click", () => runSetupStep("open_extension_settings"));
+
+  const events = tauriEvents();
+  if (events && events.listen) {
+    // macOS answers install requests later, and may answer twice (approval, then done).
+    Promise.resolve(events.listen("camera-extension", () => refreshStatus())).catch(() => {});
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      refreshStatus();
+      startPolling();
+    }
+  });
+  refreshStatus();
+  if (!document.hidden) {
+    startPolling();
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 async function init() {
   bindControls();
   bindGuides();
   bindVideo();
   bindMic();
-  els.camera.addEventListener("change", () => startPreview(els.camera.value));
+  els.camera.addEventListener("change", onCameraPicked);
   new ResizeObserver(layoutViewfinder).observe(els.stageArea);
   render();
   requestAnimationFrame(loop);
   showPlatform();
+  bindVirtualCamera();
   const before = localChanges;
   try {
     const settings = await invoke("get_settings");
@@ -956,7 +1242,8 @@ async function init() {
   } catch (err) {
     showError(`Could not read the settings: ${err}`);
   }
-  startPreview();
+  await loadNativeCameras();
+  startPreview(previewDeviceForSelection());
 }
 
 init();

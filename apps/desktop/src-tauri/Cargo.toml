@@ -18,6 +18,10 @@ log.workspace = true
 studio-core.workspace = true
 studio-engine.workspace = true
 studio-vdevice.workspace = true
+studio-vdevice-macos.workspace = true
+studio-capture.workspace = true
+# Only the formats a background picture is likely to use.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [lints]
 workspace = true

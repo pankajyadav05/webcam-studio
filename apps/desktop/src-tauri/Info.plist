@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Webcam Studio shows a live preview of your camera so you can set up zoom and framing.</string>
+	<string>Webcam Studio uses your camera to show a preview and to send your picture, with your effects, to the Webcam Studio Camera.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Webcam Studio uses your microphone to remove background noise.</string>
 </dict>
