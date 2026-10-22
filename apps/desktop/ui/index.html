@@ -3,88 +3,208 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
     <title>Webcam Studio</title>
+    <link rel="preload" href="fonts/bricolage-grotesque-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+          <path class="mark-brackets" d="M3 8V4h4M17 4h4v4M21 16v4h-4M7 20H3v-4" />
+          <circle class="mark-dot" cx="12" cy="12" r="3.6" />
+        </svg>
+        <h1>Webcam Studio</h1>
+      </div>
+      <p class="topbar-note">Preview shows framing only. Other effects are applied in the camera output.</p>
+    </header>
+
     <main class="layout">
-      <section class="preview" aria-labelledby="preview-title">
-        <h1 id="preview-title">Preview</h1>
-        <p class="hint">Preview (effects other than framing are applied in the virtual camera output)</p>
-        <div class="frame">
-          <video id="video" autoplay muted playsinline></video>
-          <p id="preview-message" class="overlay" role="status"></p>
+      <section class="stage" aria-label="Camera preview">
+        <div class="stage-area" id="stage-area">
+          <div class="viewfinder" id="viewfinder">
+            <canvas id="preview" aria-label="Live camera preview" role="img"></canvas>
+            <video id="video" class="source-video" autoplay muted playsinline aria-hidden="true" tabindex="-1"></video>
+
+            <div class="thirds" id="thirds" aria-hidden="true">
+              <i class="thirds-v1"></i><i class="thirds-v2"></i><i class="thirds-h1"></i><i class="thirds-h2"></i>
+            </div>
+            <span class="corner tl" aria-hidden="true"></span>
+            <span class="corner tr" aria-hidden="true"></span>
+            <span class="corner bl" aria-hidden="true"></span>
+            <span class="corner br" aria-hidden="true"></span>
+
+            <div class="tally" id="tally" data-live="false">
+              <span class="tally-dot" aria-hidden="true"></span>
+              <span class="tally-text" id="tally-text">Camera off</span>
+            </div>
+            <div class="zoom-readout" id="zoom-readout" aria-hidden="true">1.0×</div>
+
+            <p id="preview-message" class="preview-message" role="status" hidden></p>
+          </div>
         </div>
-        <label class="field">
-          <span>Camera</span>
-          <select id="camera"></select>
-        </label>
+
+        <div class="stage-strip">
+          <button type="button" id="thirds-toggle" class="chip" aria-pressed="false">
+            <span class="chip-led" aria-hidden="true"></span>Thirds guides
+          </button>
+          <p class="stage-spec mono" id="output-spec">1280 × 720 · 30 fps</p>
+        </div>
       </section>
 
-      <section class="controls" aria-labelledby="controls-title">
-        <h2 id="controls-title">Settings</h2>
+      <aside class="rail" aria-label="Settings">
+        <section class="group" aria-labelledby="g-camera">
+          <h2 id="g-camera">Camera</h2>
 
-        <fieldset>
-          <legend>Framing</legend>
-          <label class="field">
-            <span>Zoom <output id="zoom-out"></output></span>
-            <input id="zoom" type="range" min="1" max="4" step="0.05" />
-          </label>
-          <label class="field">
-            <span>Pan left to right <output id="pan-x-out"></output></span>
-            <input id="pan-x" type="range" min="-1" max="1" step="0.05" />
-          </label>
-          <label class="field">
-            <span>Pan up to down <output id="pan-y-out"></output></span>
-            <input id="pan-y" type="range" min="-1" max="1" step="0.05" />
-          </label>
-          <label class="check">
-            <input id="mirror" type="checkbox" />
-            <span>Mirror</span>
-          </label>
-          <label class="check disabled">
-            <input id="auto-frame" type="checkbox" disabled />
-            <span>Auto-frame (coming soon)</span>
-          </label>
-        </fieldset>
+          <div class="field">
+            <div class="field-head">
+              <span class="field-label" id="map-label">Framing map</span>
+              <span class="field-hint">Drag to pan, scroll to zoom</span>
+            </div>
+            <div class="map-wrap" id="map-wrap">
+              <div
+                class="map"
+                id="map"
+                tabindex="0"
+                role="application"
+                aria-labelledby="map-label"
+                aria-describedby="map-help"
+              >
+                <canvas id="map-canvas"></canvas>
+                <div class="map-rect" id="map-rect"></div>
+              </div>
+            </div>
+            <p class="map-readout mono" id="map-readout">Full frame</p>
+            <p class="sr-only" id="map-help">
+              Use the arrow keys to move the crop. Use plus and minus to change the zoom.
+            </p>
+          </div>
 
-        <fieldset>
-          <legend>Background</legend>
-          <label class="field">
-            <span>Effect</span>
-            <select id="background-mode">
-              <option value="none">None</option>
-              <option value="blur">Blur</option>
-              <option value="replace">Replace</option>
-            </select>
-          </label>
-          <label class="field" id="blur-field" hidden>
-            <span>Blur radius <output id="blur-out"></output></span>
-            <input id="blur-radius" type="range" min="1" max="50" step="1" />
-          </label>
-          <label class="field" id="image-field" hidden>
-            <span>Image path</span>
-            <input id="image-path" type="text" placeholder="/path/to/background.jpg" spellcheck="false" />
-          </label>
-        </fieldset>
+          <div class="field">
+            <label class="field-label" for="camera">Source</label>
+            <div class="select">
+              <select id="camera"></select>
+            </div>
+          </div>
 
-        <fieldset>
-          <legend>Microphone</legend>
-          <label class="field">
-            <span>Noise removal</span>
-            <select id="noise">
-              <option value="off">Off</option>
-              <option value="light">Light</option>
-              <option value="strong">Strong</option>
-            </select>
-          </label>
-        </fieldset>
+          <div class="fader" data-default="1" data-ticks="1:1×,2:2×,3:3×,4:4×" data-minor="0.5" title="Double-click to reset">
+            <div class="fader-head">
+              <label for="zoom">Zoom</label>
+              <output id="zoom-out" for="zoom" class="mono">1.0×</output>
+            </div>
+            <div class="fader-body">
+              <input id="zoom" type="range" min="1" max="4" step="0.05" value="1" data-origin="min" />
+              <div class="ticks" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="fader" data-default="0" data-ticks="-1:Left,0:Centre,1:Right" data-minor="0.25" title="Double-click to reset">
+            <div class="fader-head">
+              <label for="pan-x">Pan left to right</label>
+              <output id="pan-x-out" for="pan-x" class="mono">0.00</output>
+            </div>
+            <div class="fader-body">
+              <input id="pan-x" type="range" min="-1" max="1" step="0.05" value="0" data-origin="center" />
+              <div class="ticks" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="fader" data-default="0" data-ticks="-1:Up,0:Centre,1:Down" data-minor="0.25" title="Double-click to reset">
+            <div class="fader-head">
+              <label for="pan-y">Pan up to down</label>
+              <output id="pan-y-out" for="pan-y" class="mono">0.00</output>
+            </div>
+            <div class="fader-body">
+              <input id="pan-y" type="range" min="-1" max="1" step="0.05" value="0" data-origin="center" />
+              <div class="ticks" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="switches">
+            <label class="switch">
+              <input id="mirror" type="checkbox" role="switch" />
+              <span class="switch-text">Mirror</span>
+              <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            </label>
+            <label class="switch is-disabled">
+              <input id="auto-frame" type="checkbox" role="switch" disabled />
+              <span class="switch-text">Auto-frame <em class="soon">Coming soon</em></span>
+              <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="group" aria-labelledby="g-background">
+          <h2 id="g-background">Background</h2>
+          <div class="seg seg-3" id="background-mode" role="radiogroup" aria-labelledby="g-background">
+            <span class="seg-thumb" aria-hidden="true"></span>
+            <label class="seg-opt"><input type="radio" name="background-mode" value="none" /><span>None</span></label>
+            <label class="seg-opt"><input type="radio" name="background-mode" value="blur" /><span>Blur</span></label>
+            <label class="seg-opt"><input type="radio" name="background-mode" value="replace" /><span>Replace</span></label>
+          </div>
+
+          <div class="reveal" id="blur-field">
+            <div class="reveal-inner">
+              <div class="fader" data-default="8" data-ticks="1:1,10:10,25:25,50:50" data-minor="" title="Double-click to reset">
+                <div class="fader-head">
+                  <label for="blur-radius">Blur radius</label>
+                  <output id="blur-out" for="blur-radius" class="mono">8 px</output>
+                </div>
+                <div class="fader-body">
+                  <input id="blur-radius" type="range" min="1" max="50" step="1" value="8" data-origin="min" />
+                  <div class="ticks" aria-hidden="true"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="reveal" id="image-field">
+            <div class="reveal-inner">
+              <div class="field">
+                <label class="field-label" for="image-path">Image path</label>
+                <input id="image-path" class="text" type="text" placeholder="/path/to/background.jpg" spellcheck="false" autocomplete="off" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="group" aria-labelledby="g-mic">
+          <h2 id="g-mic">Microphone</h2>
+          <div class="field">
+            <span class="field-label" id="noise-label">Noise removal</span>
+            <div class="seg seg-3" id="noise" role="radiogroup" aria-labelledby="noise-label">
+              <span class="seg-thumb" aria-hidden="true"></span>
+              <label class="seg-opt"><input type="radio" name="noise" value="off" /><span>Off</span></label>
+              <label class="seg-opt"><input type="radio" name="noise" value="light" /><span>Light</span></label>
+              <label class="seg-opt"><input type="radio" name="noise" value="strong" /><span>Strong</span></label>
+            </div>
+          </div>
+
+          <div class="mic">
+            <div class="mic-row">
+              <button type="button" id="mic-toggle" class="btn" aria-pressed="false">Test microphone</button>
+              <output id="mic-db" class="mono mic-db" for="mic-toggle">Off</output>
+            </div>
+            <div class="meter" id="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" data-lit="0" data-peak="0"></div>
+            <p class="field-hint mic-status" id="mic-status" role="status">Level check only. Nothing is recorded.</p>
+          </div>
+        </section>
 
         <p id="error" class="error" role="alert" hidden></p>
-      </section>
+      </aside>
     </main>
 
-    <footer id="platform" class="platform">Reading platform details…</footer>
+    <footer class="statusbar">
+      <p class="status-info" id="platform">
+        <span class="status-item"><span class="status-key">System</span> <span class="mono" id="platform-os">Reading…</span></span>
+        <span class="status-sep" aria-hidden="true"></span>
+        <span class="status-item"><span class="status-key">Camera backend</span> <span class="mono" id="platform-backend">…</span></span>
+      </p>
+      <p class="pill" id="vcam-status"><span class="pill-dot" aria-hidden="true"></span>Virtual camera: not available yet</p>
+    </footer>
 
     <script src="main.js"></script>
   </body>

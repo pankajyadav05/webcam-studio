@@ -10,6 +10,7 @@ rust-version.workspace = true
 studio-core.workspace = true
 studio-segmentation.workspace = true
 studio-audio.workspace = true
+rayon = "1"
 
 [lints]
 workspace = true

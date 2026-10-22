@@ -24,6 +24,8 @@ pub struct Engine {
     replacement: Option<VideoFrame>,
     /// The replacement image scaled to the output size, kept so it is not rescaled every frame.
     replacement_scaled: Option<VideoFrame>,
+    /// Background blur and replacement; keeps its working memory from frame to frame.
+    compositor: composite::Compositor,
 }
 
 impl Engine {
@@ -38,6 +40,7 @@ impl Engine {
             denoiser,
             replacement: None,
             replacement_scaled: None,
+            compositor: composite::Compositor::new(),
         }
     }
 
@@ -95,7 +98,7 @@ impl Engine {
 
         // Step 1: framing.
         let rect = crop_rect(input.width, input.height, out_w, out_h, framing);
-        let mut frame = framing::scale_bilinear(input, &rect, out_w, out_h, framing.mirror);
+        let mut frame = framing::scale_frame(input, &rect, out_w, out_h, framing.mirror);
         frame.timestamp_us = input.timestamp_us;
 
         // Step 2: background.
@@ -106,8 +109,7 @@ impl Engine {
                 if composite::is_all_foreground(&mask) {
                     return frame;
                 }
-                let blurred = composite::box_blur(&frame, *radius);
-                composite::blend(&frame, &blurred, &mask)
+                self.compositor.blur_background(frame, &mask, *radius)
             }
             BackgroundMode::Replace { .. } => {
                 let Some(image) = &self.replacement else {
@@ -122,13 +124,16 @@ impl Engine {
                     let fit =
                         crop_rect(image.width, image.height, out_w, out_h, &Framing::default());
                     self.replacement_scaled =
-                        Some(framing::scale_bilinear(image, &fit, out_w, out_h, false));
+                        Some(framing::scale_frame(image, &fit, out_w, out_h, false));
                 }
                 let Some(background) = &self.replacement_scaled else {
                     return frame;
                 };
                 let mask = self.segmenter.segment(&frame);
-                composite::blend(&frame, background, &mask)
+                if composite::is_all_foreground(&mask) {
+                    return frame;
+                }
+                self.compositor.replace_background(frame, background, &mask)
             }
         }
     }
