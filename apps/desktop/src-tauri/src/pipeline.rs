@@ -99,6 +99,13 @@ pub trait Devices: Send + Sync + 'static {
     ) -> StudioResult<Box<dyn CameraCapture>>;
     /// Creates the virtual camera.
     fn create_virtual_camera(&self, name: &str) -> StudioResult<Box<dyn VirtualCamera>>;
+    /// The person model that finds who to keep sharp. Called on the worker thread, which
+    /// it must then stay on (Apple Vision keeps per-thread state).
+    fn person_model(&self) -> Result<Box<dyn PersonSegmenter>, String> {
+        VisionSegmenter::new()
+            .map(|vision| Box::new(vision) as Box<dyn PersonSegmenter>)
+            .map_err(|e| e.to_string())
+    }
 }
 
 /// The real thing: the capture crate and the platform's virtual camera.
@@ -494,8 +501,8 @@ impl Job {
         let mut failures_in_a_row = 0u32;
         // Apple Vision's request keeps its own state and must stay on this thread. Without it,
         // Blur and Replace leave the picture as it is.
-        let mut person = match VisionSegmenter::new() {
-            Ok(vision) => Some(vision),
+        let mut person = match self.devices.person_model() {
+            Ok(model) => Some(model),
             Err(e) => {
                 log::warn!("No person model for the virtual camera: {e}");
                 None
@@ -769,6 +776,11 @@ mod tests {
                 stopped: Arc::clone(&self.vcam_stopped),
                 pushed: Arc::clone(&self.pushed),
             }))
+        }
+        // Real Vision is slow on CI machines without a Neural Engine; frame flow is what
+        // these tests check.
+        fn person_model(&self) -> Result<Box<dyn PersonSegmenter>, String> {
+            Err("no model in tests".to_string())
         }
     }
 
