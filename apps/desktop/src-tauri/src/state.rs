@@ -171,6 +171,11 @@ impl AppState {
         })
     }
 
+    /// What the meeting camera's worker is doing.
+    pub fn pipeline_phase(&self) -> crate::pipeline::Phase {
+        self.pipeline.snapshot().phase
+    }
+
     /// Starts the virtual camera with the real camera `camera_id`. Blocks until it runs or
     /// fails, which can take as long as the person needs to answer the permission question.
     pub fn start_virtual_camera(&self, camera_id: &str) -> Result<VcamStatus, String> {

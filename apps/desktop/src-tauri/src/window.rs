@@ -157,7 +157,12 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     state.capture(&window);
     app.manage(state);
     menu(app)?;
-    window.show()?;
+    if crate::background::started_hidden() {
+        #[cfg(target_os = "macos")]
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    } else {
+        window.show()?;
+    }
     Ok(())
 }
 
@@ -173,7 +178,12 @@ pub fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
             state.capture(&main);
             let _ = main.emit("window-chrome-changed", ());
         }
-        WindowEvent::CloseRequested { .. } => state.save(),
+        // Closing keeps the app running in the menu bar, so meeting apps keep the camera.
+        WindowEvent::CloseRequested { api, .. } => {
+            api.prevent_close();
+            state.save();
+            crate::background::hide_window(window.app_handle());
+        }
         WindowEvent::ThemeChanged(theme) => {
             let _ = main.emit("window-theme-changed", theme.to_string().to_lowercase());
         }

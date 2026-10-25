@@ -11,7 +11,8 @@ rust-version.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2"
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true

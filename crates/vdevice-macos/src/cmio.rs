@@ -18,10 +18,12 @@ use studio_core::error::{Result, StudioError};
 
 use crate::{DEVICE_UUID, SINK_STREAM_NAME};
 
-/// Value of `kCMIOStreamPropertyDirection` for an input stream (a sink). Output streams
-/// report 0.
 /// Data flowing out of the computer into the device: the sink an app writes into.
 const DIRECTION_OUTPUT: u32 = 0;
+
+/// The extension's custom device property 'wsrd': how many apps read the camera, as a
+/// decimal string. Older extensions do not have it.
+const READERS_SELECTOR: u32 = u32::from_be_bytes(*b"wsrd");
 
 /// The message shown when the extension is missing.
 pub(crate) const NOT_INSTALLED: &str = "Webcam Studio Camera is not installed or not approved yet. Open the app's camera setup to install it.";
@@ -108,6 +110,12 @@ pub(crate) fn find_device() -> Option<CMIODeviceID> {
             read_string(device, kCMIODevicePropertyDeviceUID)
                 .is_some_and(|uid| uid.eq_ignore_ascii_case(DEVICE_UUID))
         })
+}
+
+/// How many apps read the camera right now, or `None` if the extension does not say
+/// (an older extension, or none at all).
+pub(crate) fn readers(device: CMIODeviceID) -> Option<u32> {
+    read_string(device, READERS_SELECTOR)?.trim().parse().ok()
 }
 
 /// Finds the stream the app writes into (the extension's sink).

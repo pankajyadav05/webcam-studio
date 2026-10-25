@@ -146,6 +146,19 @@ pub fn extension_installed() -> bool {
     }
 }
 
+/// How many apps read Webcam Studio Camera, or `None` if the extension does not say (it is
+/// missing, or older than this app).
+pub fn meeting_readers() -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    {
+        studio_vdevice::macos::meeting_readers()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 /// Whether the running app carries a camera extension that could be installed.
 ///
 /// A plain `cargo run` or an unsigned build has none, and then installing can never work, so

@@ -4,6 +4,8 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod auto_camera;
+mod background;
 mod extension;
 mod image_load;
 mod logfile;
@@ -30,8 +32,14 @@ fn get_settings(state: State<'_, AppState>) -> Settings {
 
 // Async so that loading a background picture does not block the window.
 #[tauri::command]
-async fn set_settings(state: State<'_, AppState>, settings: Settings) -> Result<Settings, String> {
-    state.set_settings(settings)
+async fn set_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: Settings,
+) -> Result<Settings, String> {
+    let applied = state.set_settings(settings)?;
+    background::reflect_background(&app, &applied.background);
+    Ok(applied)
 }
 
 /// The window's Replace background for the virtual camera. Body: PNG or JPEG bytes; the
@@ -50,6 +58,12 @@ fn set_window_picture(
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default();
     state.set_window_picture(key, bytes)
+}
+
+/// The real camera meeting frames come from, by the name the window shows.
+#[tauri::command]
+fn set_meeting_camera(camera: State<'_, auto_camera::MeetingCamera>, name: String) {
+    camera.set(name);
 }
 
 #[tauri::command]
@@ -116,7 +130,7 @@ async fn stop_virtual_camera(app: AppHandle) -> Result<VcamStatus, String> {
 }
 
 /// Builds the function that sends install news to the window.
-fn emitter(app: &AppHandle) -> Arc<dyn Fn(ExtensionEvent) + Send + Sync> {
+pub(crate) fn emitter(app: &AppHandle) -> Arc<dyn Fn(ExtensionEvent) + Send + Sync> {
     let app = app.clone();
     Arc::new(move |event| {
         if let Err(e) = app.emit(EVENT_NAME, event) {
@@ -155,7 +169,17 @@ fn main() {
         .manage(AppState::new())
         .manage(segmentation::Segmentation::new())
         .manage(samples::Samples::default())
-        .setup(window::setup)
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![background::HIDDEN_ARG]),
+        ))
+        .manage(auto_camera::MeetingCamera::default())
+        .setup(|app| {
+            window::setup(app)?;
+            background::setup_tray(app)?;
+            auto_camera::spawn(app.handle().clone());
+            Ok(())
+        })
         .on_window_event(window::on_window_event)
         .invoke_handler(tauri::generate_handler![
             window::window_chrome,
@@ -171,6 +195,10 @@ fn main() {
             list_native_cameras,
             meetings_available,
             set_window_picture,
+            set_meeting_camera,
+            background::window_visible,
+            background::open_at_login,
+            background::set_open_at_login,
             open_privacy_settings,
             virtual_camera_status,
             start_virtual_camera,
@@ -182,6 +210,11 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Webcam Studio")
         .run(|app, event| {
+            // Clicking the app in Finder or the Dock while it sits in the menu bar.
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { .. } = event {
+                background::show_window(app);
+            }
             // Leave the virtual camera tidy: meeting apps then show the placeholder.
             if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
                 app.state::<window::WindowState>().save();
