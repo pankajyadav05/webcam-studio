@@ -7,11 +7,12 @@
 
 pub mod composite;
 pub mod framing;
+pub mod matte;
 
 use studio_audio::{Denoiser, denoiser_for};
 use studio_core::frame::{AudioChunk, VideoFrame};
 use studio_core::settings::{BackgroundMode, Framing, Settings};
-use studio_segmentation::{FullForegroundSegmenter, Segmenter};
+use studio_segmentation::{FullForegroundSegmenter, Mask, Segmenter};
 
 pub use framing::{CropRect, crop_rect};
 
@@ -26,7 +27,16 @@ pub struct Engine {
     replacement_scaled: Option<VideoFrame>,
     /// Background blur and replacement; keeps its working memory from frame to frame.
     compositor: composite::Compositor,
+    /// Smooths person masks from a real model over time.
+    matte: matte::MatteFilter,
+    /// Capture time of the frame behind the last model mask, for the smoothing step.
+    last_mask_us: Option<u64>,
+    /// The last finished mask from the model, reused if one mask fails.
+    last_mask: Option<Mask>,
 }
+
+/// Returns the raw person mask for a frame, or `None` if the model failed on it.
+pub type PersonModel<'a> = &'a mut dyn FnMut(&VideoFrame) -> Option<Mask>;
 
 impl Engine {
     /// Creates an engine with the full-foreground segmenter and the denoiser for
@@ -41,6 +51,9 @@ impl Engine {
             replacement: None,
             replacement_scaled: None,
             compositor: composite::Compositor::new(),
+            matte: matte::MatteFilter::new(),
+            last_mask_us: None,
+            last_mask: None,
         }
     }
 
@@ -92,6 +105,55 @@ impl Engine {
     /// (MediaPipe Face Detection is planned) feeding a smoothed crop box, which would replace
     /// the manual zoom and pan used here.
     pub fn process_video(&mut self, input: &VideoFrame) -> VideoFrame {
+        self.render(input, None)
+    }
+
+    /// Like [`Engine::process_video`], with masks from a real person model instead of the
+    /// built-in segmenter. The model sees the framed picture; its masks are smoothed over time
+    /// and shaped by `Settings::cutout` the same way as in the window.
+    pub fn process_video_with(&mut self, input: &VideoFrame, model: PersonModel<'_>) -> VideoFrame {
+        self.render(input, Some(model))
+    }
+
+    fn person_mask(&mut self, frame: &VideoFrame, model: Option<PersonModel<'_>>) -> Mask {
+        let Some(model) = model else {
+            return self.segmenter.segment(frame);
+        };
+        let Some(raw) = model(frame) else {
+            return match &self.last_mask {
+                Some(mask) if (mask.width, mask.height) == (frame.width, frame.height) => {
+                    mask.clone()
+                }
+                _ => Mask::full(frame.width, frame.height),
+            };
+        };
+        let elapsed_ms = match self.last_mask_us {
+            Some(last) if frame.timestamp_us > last => (frame.timestamp_us - last) as f32 / 1000.0,
+            _ => 33.333,
+        };
+        self.last_mask_us = Some(frame.timestamp_us);
+        let params = matte::Params::from(self.settings.cutout);
+        let grid = matte::luma_grid(
+            frame,
+            (raw.width as usize / 4).max(1),
+            (raw.height as usize / 4).max(1),
+        );
+        let alpha = self
+            .matte
+            .apply(&raw, elapsed_ms, Some(&grid), params.still_ms);
+        let mask = matte::finish(
+            alpha,
+            raw.width as usize,
+            raw.height as usize,
+            frame.width as usize,
+            frame.height as usize,
+            &params,
+        );
+        self.last_mask = Some(mask.clone());
+        mask
+    }
+
+    fn render(&mut self, input: &VideoFrame, model: Option<PersonModel<'_>>) -> VideoFrame {
         let out_w = self.settings.output_width.max(1);
         let out_h = self.settings.output_height.max(1);
         let framing = &self.settings.framing;
@@ -102,14 +164,20 @@ impl Engine {
         frame.timestamp_us = input.timestamp_us;
 
         // Step 2: background.
-        match &self.settings.background {
-            BackgroundMode::None => frame,
+        match self.settings.background.clone() {
+            BackgroundMode::None => {
+                // Start fresh when an effect is turned on again.
+                self.matte.reset();
+                self.last_mask_us = None;
+                self.last_mask = None;
+                frame
+            }
             BackgroundMode::Blur { radius } => {
-                let mask = self.segmenter.segment(&frame);
+                let mask = self.person_mask(&frame, model);
                 if composite::is_all_foreground(&mask) {
                     return frame;
                 }
-                self.compositor.blur_background(frame, &mask, *radius)
+                self.compositor.blur_background(frame, &mask, radius)
             }
             BackgroundMode::Replace { .. } => {
                 let Some(image) = &self.replacement else {
@@ -126,13 +194,16 @@ impl Engine {
                     self.replacement_scaled =
                         Some(framing::scale_frame(image, &fit, out_w, out_h, false));
                 }
-                let Some(background) = &self.replacement_scaled else {
+                if self.replacement_scaled.is_none() {
                     return frame;
-                };
-                let mask = self.segmenter.segment(&frame);
+                }
+                let mask = self.person_mask(&frame, model);
                 if composite::is_all_foreground(&mask) {
                     return frame;
                 }
+                let Some(background) = &self.replacement_scaled else {
+                    return frame;
+                };
                 self.compositor.replace_background(frame, background, &mask)
             }
         }
@@ -181,6 +252,33 @@ mod tests {
         fn name(&self) -> &'static str {
             "const"
         }
+    }
+
+    #[test]
+    fn blur_with_a_person_model_keeps_the_person_and_blurs_the_rest() {
+        let mut engine = Engine::new(Settings {
+            background: BackgroundMode::Blur { radius: 4 },
+            ..small_settings()
+        });
+        // The model says the left half is the person.
+        let mut model = |frame: &VideoFrame| {
+            let (w, h) = (frame.width as usize, frame.height as usize);
+            Some(Mask {
+                width: frame.width,
+                height: frame.height,
+                alpha: (0..w * h)
+                    .map(|i| if i % w < w / 2 { 255 } else { 0 })
+                    .collect(),
+            })
+        };
+        let input = checkerboard(32, 18);
+        let out = engine.process_video_with(&input, &mut model);
+        assert_eq!(out.pixel(2, 9), input.pixel(2, 9), "person pixel changed");
+        let right = out.pixel(28, 9)[0];
+        assert!(right > 60 && right < 195, "background not blurred: {right}");
+        // A failed mask reuses the last good one instead of dropping the effect.
+        let again = engine.process_video_with(&input, &mut |_: &VideoFrame| None);
+        assert_eq!(again.pixel(28, 9), out.pixel(28, 9));
     }
 
     fn small_settings() -> Settings {

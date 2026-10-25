@@ -1,1249 +1,944 @@
-"use strict";
+// Webcam Studio: wires the page together.
+//
+// The picture is drawn by the engine (framing, background blur and replacement). This file
+// owns everything around it: the controls, moving the picture by hand, permissions, and
+// remembering the choices.
 
-const invoke = window.__TAURI__.core.invoke;
+import { TUNING_DEFAULTS } from "./engine/tuning.js";
+import { createPreviewSources } from "./lib/preview-source.js";
+import { createStore, clamp, ZOOM_MIN, ZOOM_MAX } from "./lib/store.js";
+import { createCamera } from "./lib/camera.js";
+import { createMic, FLOOR_DB } from "./lib/mic.js";
+import { PRESETS, drawPreset, presetSource, loadImageFile, imageFromDataUrl } from "./lib/backgrounds.js";
+import { createMeetings } from "./lib/meetings.js";
+import { invoke, hasBackend } from "./lib/tauri.js";
+import { initWindow } from "./lib/window.js";
+
+initWindow();
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  video: $("video"),
+  frame: $("frame"),
   preview: $("preview"),
-  viewfinder: $("viewfinder"),
-  stageArea: $("stage-area"),
-  message: $("preview-message"),
-  tally: $("tally"),
-  tallyText: $("tally-text"),
-  zoomReadout: $("zoom-readout"),
-  thirds: $("thirds"),
-  thirdsToggle: $("thirds-toggle"),
-  outputSpec: $("output-spec"),
-  map: $("map"),
-  mapCanvas: $("map-canvas"),
-  mapRect: $("map-rect"),
-  mapWrap: $("map-wrap"),
-  mapReadout: $("map-readout"),
-  camera: $("camera"),
+  video: $("video"),
+  grid: $("grid"),
+  zoomChip: $("zoom-chip"),
+  effectChip: $("effect-chip"),
+  notice: $("notice"),
+  noticeTitle: $("notice-title"),
+  noticeText: $("notice-text"),
+  noticePrimary: $("notice-primary"),
+  noticeRetry: $("notice-retry"),
   zoom: $("zoom"),
   zoomOut: $("zoom-out"),
-  panX: $("pan-x"),
-  panXOut: $("pan-x-out"),
-  panY: $("pan-y"),
-  panYOut: $("pan-y-out"),
+  zoomIn: $("zoom-in"),
+  zoomReadout: $("zoom-readout"),
   mirror: $("mirror"),
-  autoFrame: $("auto-frame"),
+  gridToggle: $("grid-toggle"),
+  reset: $("reset"),
+  camera: $("camera"),
+  cameraInfo: $("camera-info"),
   bgGroup: $("background-mode"),
   blurField: $("blur-field"),
-  blurRadius: $("blur-radius"),
-  blurOut: $("blur-out"),
-  imageField: $("image-field"),
-  imagePath: $("image-path"),
-  noiseGroup: $("noise"),
-  micToggle: $("mic-toggle"),
-  micMeter: $("mic-meter"),
-  micDb: $("mic-db"),
-  micStatus: $("mic-status"),
-  error: $("error"),
-  platformOs: $("platform-os"),
-  platformBackend: $("platform-backend"),
-  previewNote: $("preview-note"),
-  vcamGroup: $("vcam-group"),
-  vcamToggle: $("vcam-toggle"),
-  vcamCamera: $("vcam-camera"),
-  vcamCameraName: $("vcam-camera-name"),
-  vcamLine: $("vcam-line"),
-  vcamSetup: $("vcam-setup"),
-  vcamInstall: $("vcam-install"),
-  vcamAllow: $("vcam-allow"),
-  stepInstall: $("step-install"),
-  stepAllow: $("step-allow"),
-  vcamPill: $("vcam-status"),
-  vcamPillText: $("vcam-status-text"),
+  blur: $("blur"),
+  blurReadout: $("blur-readout"),
+  replaceField: $("replace-field"),
+  swatches: $("swatches"),
+  imageFile: $("image-file"),
+  effectProblem: $("effect-problem"),
+  mic: $("mic"),
+  meter: $("meter"),
+  meterBar: $("meter-bar"),
+  meterPeak: $("meter-peak"),
+  noise: $("noise"),
+  micInfo: $("mic-info"),
+  micFix: $("mic-fix"),
+  meetings: $("meetings"),
+  meetingsAction: $("meetings-action"),
+  meetingsInfo: $("meetings-info"),
+  panel: $("panel"),
+  cameraButton: $("camera-button"),
+  cameraButtonText: $("camera-button-text"),
+  cameraMenu: $("camera-menu"),
+  formatChip: $("format-chip"),
+  formatText: $("format-text"),
+  micSummary: $("mic-summary"),
+  miniMeterBar: $("mini-meter-bar"),
+  advancedRow: $("advanced-row"),
+  advancedSummary: $("advanced-summary"),
 };
 
-// ---------------------------------------------------------------------------
-// Framing maths. This is a port of `crop_rect` in crates/engine/src/framing.rs,
-// so the preview shows exactly the region the engine will crop.
-// ---------------------------------------------------------------------------
+// What the camera is delivering, for the pill on the picture. Null until it opens.
+let cameraFormat = null;
 
-const ZOOM_MIN = 1;
-const ZOOM_MAX = 4;
-const DEFAULT_ZOOM = 1;
-const DEFAULT_BLUR = 8;
+const store = createStore();
+const camera = createCamera(els.video);
 
-function clampOr(value, lo, hi, fallback) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) {
-    return fallback;
-  }
-  return Math.min(hi, Math.max(lo, n));
-}
-
-// Same limits as `Framing::clamped`.
-function clampFraming(f) {
-  return {
-    zoom: clampOr(f.zoom, ZOOM_MIN, ZOOM_MAX, 1),
-    pan_x: clampOr(f.pan_x, -1, 1, 0),
-    pan_y: clampOr(f.pan_y, -1, 1, 0),
-    mirror: !!f.mirror,
-    auto_frame: !!f.auto_frame,
-  };
-}
-
-// The part of the input image to show: output aspect ratio, as large as fits, divided by the
-// zoom, slid inside the leftover margin by the pan values.
-function cropRect(inW, inH, outW, outH, framing) {
-  if (!(inW > 0) || !(inH > 0)) {
-    return { x: 0, y: 0, width: inW || 0, height: inH || 0 };
-  }
-  const f = clampFraming(framing);
-  const aspect = outW > 0 && outH > 0 ? outW / outH : inW / inH;
-  let maxW;
-  let maxH;
-  if (inW / inH > aspect) {
-    maxW = inH * aspect;
-    maxH = inH;
-  } else {
-    maxW = inW;
-    maxH = inW / aspect;
-  }
-  const width = Math.min(maxW / f.zoom, inW);
-  const height = Math.min(maxH / f.zoom, inH);
-  const marginX = Math.max(inW - width, 0);
-  const marginY = Math.max(inH - height, 0);
-  return {
-    x: Math.min(Math.max(marginX * (f.pan_x + 1) * 0.5, 0), marginX),
-    y: Math.min(Math.max(marginY * (f.pan_y + 1) * 0.5, 0), marginY),
-    width,
-    height,
-  };
-}
+let engine = null;
+let sources = null;
+let nativeQualityAvailable = false;
+let cropRect = null;
+let OUTPUT = { width: 1280, height: 720 };
+let customSource = null; // the picture the person chose, once loaded
 
 // ---------------------------------------------------------------------------
-// Settings state.
-//
-// `desired` is what the user has asked for. It changes immediately on every input, and
-// every change sends the whole of it to the engine. A reply from the engine (which may have
-// clamped values) is adopted only when it answers the newest request; an older reply is stale
-// because the user has already moved on, so it must not overwrite their newer choices.
+// Drawing the controls from the saved choices
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SETTINGS = {
-  framing: { zoom: 1, pan_x: 0, pan_y: 0, mirror: false, auto_frame: false },
-  background: { mode: "none" },
-  noise: "off",
-  output_width: 1280,
-  output_height: 720,
-  output_fps: 30,
-};
+const round3 = (n) => Math.round(n * 1000) / 1000;
 
-let desired = structuredClone(DEFAULT_SETTINGS);
-// Values the background controls keep while another mode is selected.
-const remembered = { radius: DEFAULT_BLUR, imagePath: "" };
-let localChanges = 0;
-let requestSeq = 0;
-let dirty = true;
-
-function backgroundFor(mode) {
-  switch (mode) {
-    case "blur":
-      return { mode: "blur", radius: remembered.radius };
-    case "replace":
-      return { mode: "replace", image_path: remembered.imagePath };
-    default:
-      return { mode: "none" };
-  }
-}
-
-function adopt(settings) {
-  desired = structuredClone(settings);
-  if (desired.background.mode === "blur") {
-    remembered.radius = desired.background.radius;
-  } else if (desired.background.mode === "replace") {
-    remembered.imagePath = desired.background.image_path;
-  }
-}
-
-function showError(text) {
-  els.error.textContent = text;
-  els.error.hidden = !text;
-}
-
-// Apply a change to the desired state, show it now, and send the whole state to the engine.
-function change(mutate) {
-  mutate(desired);
-  localChanges += 1;
-  render();
-  send();
-}
-
-function send() {
-  const id = ++requestSeq;
-  const settings = structuredClone(desired);
-  invoke("set_settings", { settings }).then(
-    (reply) => {
-      if (id !== requestSeq) {
-        return;
-      }
-      showError("");
-      adopt(reply);
-      render();
-    },
-    (err) => {
-      if (id === requestSeq) {
-        // The engine words its own errors (for example a background picture that would not
-        // open). Anything else gets a general lead-in.
-        const text = String(err);
-        showError(text.startsWith("Could not") ? text : `Could not save the settings: ${text}`);
-      }
-    },
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Number formatting
-// ---------------------------------------------------------------------------
-
-function zoomText(zoom) {
-  const text = Number(zoom).toFixed(2);
-  return `${text.endsWith("0") ? text.slice(0, -1) : text}×`;
-}
-
-function panText(value) {
-  const n = Number(value);
-  if (Math.abs(n) < 0.005) {
-    return "0.00";
-  }
-  return `${n < 0 ? "−" : "+"}${Math.abs(n).toFixed(2)}`;
-}
-
-function round3(n) {
-  return Math.round(n * 1000) / 1000;
-}
-
-// ---------------------------------------------------------------------------
-// Faders: ticks, fill, double-click reset
-// ---------------------------------------------------------------------------
-
-function buildTicks(fader) {
-  const input = fader.querySelector("input[type=range]");
-  const host = fader.querySelector(".ticks");
+function paintSlider(input) {
   const min = Number(input.min);
   const max = Number(input.max);
-  const pos = (v) => (v - min) / (max - min);
-
-  const minorStep = Number(fader.dataset.minor);
-  const majors = fader.dataset.ticks.split(",").map((t) => {
-    const cut = t.indexOf(":");
-    return { value: Number(t.slice(0, cut)), label: t.slice(cut + 1) };
-  });
-  const isMajor = (v) => majors.some((m) => Math.abs(m.value - v) < 1e-9);
-
-  const add = (value, label, classes) => {
-    const tick = document.createElement("span");
-    tick.className = `tick ${classes}`;
-    tick.style.setProperty("--p", String(pos(value)));
-    if (label) {
-      const text = document.createElement("span");
-      text.className = "tick-label";
-      text.textContent = label;
-      tick.append(text);
-    }
-    host.append(tick);
-  };
-
-  if (minorStep > 0) {
-    for (let v = min; v <= max + 1e-9; v += minorStep) {
-      if (!isMajor(v)) {
-        add(v, "", "minor");
-      }
-    }
-  }
-  majors.forEach((m, i) => {
-    const classes = ["major"];
-    if (i === 0) classes.push("first");
-    if (i === majors.length - 1) classes.push("last");
-    if (min < 0 && m.value === 0) classes.push("centre");
-    add(m.value, m.label, classes.join(" "));
-  });
+  input.style.setProperty("--p", `${((Number(input.value) - min) / (max - min)) * 100}%`);
 }
 
-// Fill from the start, or from the centre for pan faders.
-function paintFader(input, value) {
-  const min = Number(input.min);
-  const max = Number(input.max);
-  const p = (clampOr(value, min, max, min) - min) / (max - min);
-  const centre = input.dataset.origin === "center" ? 0.5 : 0;
-  input.style.setProperty("--fill-a", `${Math.min(p, centre) * 100}%`);
-  input.style.setProperty("--fill-b", `${Math.max(p, centre) * 100}%`);
-}
-
-function setFader(input, value) {
-  if (document.activeElement !== input || Number(input.value) !== value) {
-    input.value = String(value);
-  }
-  paintFader(input, value);
-}
-
-function bindFader(input, apply) {
-  const fader = input.closest(".fader");
-  input.addEventListener("input", () => apply(Number(input.value)));
-  fader.addEventListener("dblclick", () => apply(Number(fader.dataset.default)));
-}
-
-// ---------------------------------------------------------------------------
-// Rendering the controls from `desired`
-// ---------------------------------------------------------------------------
-
-function setRadio(group, value) {
-  const inputs = [...group.querySelectorAll("input[type=radio]")];
-  inputs.forEach((input, i) => {
-    input.checked = input.value === value;
-    if (input.checked) {
-      group.style.setProperty("--i", String(i));
-      group.dataset.idle = String(value === "none" || value === "off");
-    }
-  });
-}
-
-function setReveal(panel, open) {
-  panel.classList.toggle("open", open);
-  panel.inert = !open;
-  panel.setAttribute("aria-hidden", open ? "false" : "true");
-}
-
-function cameraSize() {
-  const w = els.video.videoWidth;
-  const h = els.video.videoHeight;
-  if (w > 0 && h > 0) {
-    return { w, h, live: true };
-  }
-  return { w: 16, h: 9, live: false };
-}
+const zoomText = (zoom) => `${zoom.toFixed(1)}×`;
 
 function render() {
-  const { framing, background, noise } = desired;
+  const s = store.get();
 
-  setFader(els.zoom, framing.zoom);
-  els.zoomOut.textContent = zoomText(framing.zoom);
-  els.zoomReadout.textContent = zoomText(framing.zoom);
-  setFader(els.panX, framing.pan_x);
-  els.panXOut.textContent = panText(framing.pan_x);
-  setFader(els.panY, framing.pan_y);
-  els.panYOut.textContent = panText(framing.pan_y);
-  els.mirror.checked = framing.mirror;
-  els.autoFrame.checked = framing.auto_frame;
+  els.zoomOut.disabled = s.zoom <= ZOOM_MIN;
+  els.zoomIn.disabled = s.zoom >= ZOOM_MAX;
+  els.zoom.setAttribute("aria-valuetext", `${s.zoom.toFixed(2)} times`);
+  els.zoom.value = String(s.zoom);
+  paintSlider(els.zoom);
+  els.zoomReadout.textContent = zoomText(s.zoom);
+  els.zoomChip.textContent = zoomText(s.zoom);
+  els.zoomChip.hidden = s.zoom <= ZOOM_MIN + 0.001;
+  els.frame.classList.toggle("pannable", s.zoom > ZOOM_MIN + 0.001);
 
-  setRadio(els.bgGroup, background.mode);
-  setReveal(els.blurField, background.mode === "blur");
-  setReveal(els.imageField, background.mode === "replace");
-  setFader(els.blurRadius, remembered.radius);
-  els.blurOut.textContent = `${remembered.radius} px`;
-  if (document.activeElement !== els.imagePath) {
-    els.imagePath.value = remembered.imagePath;
+  els.mirror.setAttribute("aria-pressed", String(s.mirror));
+  els.gridToggle.setAttribute("aria-pressed", String(s.grid));
+  els.grid.classList.toggle("on", s.grid);
+
+  const mode = s.background.mode;
+  for (const radio of els.bgGroup.querySelectorAll("input")) {
+    radio.checked = radio.value === mode;
+  }
+  const effectOn = mode !== "none";
+  els.advancedRow.disabled = !effectOn;
+  const tuned = Object.keys(TUNING_DEFAULTS).some((key) => Math.abs(s.background[key] - TUNING_DEFAULTS[key]) > 0.005)
+    || s.background.quality !== "balanced" || s.background.view === "mask";
+  els.advancedSummary.textContent = !effectOn ? "Turn on Blur or Replace first" : tuned ? "Cutout: custom" : "Cutout: default";
+  if (!effectOn && currentPage() === "advanced") back();
+  for (const key of Object.keys(TUNING_DEFAULTS)) {
+    const input = $(key); input.value = String(s.background[key]*100);
+    input.setAttribute("aria-valuetext", `${Math.round(s.background[key]*100)} percent`); paintSlider(input);
+  }
+  $("show-mask").checked = s.background.view === "mask";
+  for (const radio of $("quality").querySelectorAll("input")) {
+    radio.checked = radio.value === s.background.quality; radio.disabled = !nativeQualityAvailable;
+  }
+  $("quality-hint").textContent = nativeQualityAvailable
+    ? "Accurate follows hair and hands more closely, but uses more power."
+    : "Quality needs Apple Vision, which is not running on this Mac.";
+  els.blurField.hidden = mode !== "blur";
+  els.replaceField.hidden = mode !== "replace";
+  els.blur.value = String(s.background.radius);
+  paintSlider(els.blur);
+  els.blurReadout.textContent = String(s.background.radius);
+  for (const swatch of els.swatches.querySelectorAll("[data-preset]")) {
+    const selected = swatch.dataset.preset === s.background.preset;
+    swatch.setAttribute("aria-checked", String(selected));
+    swatch.tabIndex = selected ? 0 : -1;
   }
 
-  setRadio(els.noiseGroup, noise);
+  els.noise.checked = s.mic.noise;
 
-  els.outputSpec.textContent = `${desired.output_width} × ${desired.output_height} · ${desired.output_fps} fps`;
-  layoutViewfinder();
-  updateMap();
-  dirty = true;
-}
-
-// ---------------------------------------------------------------------------
-// Viewfinder canvas
-// ---------------------------------------------------------------------------
-
-const previewCtx = els.preview.getContext("2d");
-const mapCtx = els.mapCanvas.getContext("2d");
-
-function fit(boxW, boxH, aspect) {
-  let w = boxW;
-  let h = w / aspect;
-  if (h > boxH) {
-    h = boxH;
-    w = h * aspect;
+  if (engine) {
+    engine.setTuning(s.background);
+    engine.setQuality(s.background.quality);
+    engine.setView(s.background.view);
+    engine.setFraming({ zoom: s.zoom, pan_x: s.pan_x, pan_y: s.pan_y, mirror: s.mirror });
+    engine.setBackground({
+      mode,
+      radius: s.background.radius,
+      image: mode === "replace" ? backgroundImage(s) : null,
+    });
   }
-  return { w: Math.max(1, Math.floor(w)), h: Math.max(1, Math.floor(h)) };
+  syncBackend();
 }
 
-function outputAspect() {
-  const w = desired.output_width;
-  const h = desired.output_height;
-  return w > 0 && h > 0 ? w / h : 16 / 9;
+function backgroundImage(s) {
+  if (s.background.preset === "custom") {
+    return customSource;
+  }
+  return presetSource(s.background.preset, OUTPUT.width, OUTPUT.height);
 }
 
-function layoutViewfinder() {
-  const area = els.stageArea;
-  const cs = getComputedStyle(area);
-  const boxW = area.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-  const boxH = area.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-  if (boxW <= 0 || boxH <= 0) {
+store.subscribe(render);
+
+// The Rust side keeps its own copy of the settings for the virtual camera, so meetings get
+// the same framing, effect and cutout as the preview. It is best effort: the window works
+// without it, so a failure is not worth showing.
+let syncTimer = 0;
+let sentPicture = "";
+function syncBackend() {
+  if (!hasBackend()) {
     return;
   }
-  const { w, h } = fit(boxW, boxH, outputAspect());
-  const dpr = window.devicePixelRatio || 1;
-  els.viewfinder.style.width = `${w}px`;
-  els.viewfinder.style.height = `${h}px`;
-  const cw = Math.round(w * dpr);
-  const ch = Math.round(h * dpr);
-  if (els.preview.width !== cw || els.preview.height !== ch) {
-    els.preview.width = cw;
-    els.preview.height = ch;
-    dirty = true;
-  }
-  layoutMap();
-}
-
-function layoutMap() {
-  const cam = cameraSize();
-  const maxW = Math.max(120, els.mapWrap.clientWidth - 18);
-  const { w, h } = fit(maxW, 120, cam.w / cam.h);
-  els.map.style.width = `${w}px`;
-  els.map.style.height = `${h}px`;
-  const dpr = window.devicePixelRatio || 1;
-  const cw = Math.round(w * dpr);
-  const ch = Math.round(h * dpr);
-  if (els.mapCanvas.width !== cw || els.mapCanvas.height !== ch) {
-    els.mapCanvas.width = cw;
-    els.mapCanvas.height = ch;
-    dirty = true;
-  }
-}
-
-// The crop rectangle in camera pixels, plus the camera size it refers to.
-function currentCrop() {
-  const cam = cameraSize();
-  const rect = cropRect(cam.w, cam.h, desired.output_width, desired.output_height, desired.framing);
-  return { cam, rect };
-}
-
-// Position the draggable rectangle. With mirror on, the map is mirrored like the preview,
-// so the rectangle sits where the picture appears on screen.
-function updateMap() {
-  const { cam, rect } = currentCrop();
-  const fx = rect.x / cam.w;
-  const fy = rect.y / cam.h;
-  const fw = rect.width / cam.w;
-  const fh = rect.height / cam.h;
-  const left = desired.framing.mirror ? 1 - (fx + fw) : fx;
-  els.mapRect.style.left = `${left * 100}%`;
-  els.mapRect.style.top = `${fy * 100}%`;
-  els.mapRect.style.width = `${fw * 100}%`;
-  els.mapRect.style.height = `${fh * 100}%`;
-
-  const data = els.map.dataset;
-  data.x = rect.x.toFixed(2);
-  data.y = rect.y.toFixed(2);
-  data.w = rect.width.toFixed(2);
-  data.h = rect.height.toFixed(2);
-  data.cameraW = String(cam.live ? cam.w : 0);
-  data.cameraH = String(cam.live ? cam.h : 0);
-  data.mirror = String(desired.framing.mirror);
-
-  if (cam.live) {
-    els.mapReadout.textContent =
-      `${Math.round(rect.width)} × ${Math.round(rect.height)} from ${cam.w} × ${cam.h}`;
-  } else {
-    els.mapReadout.textContent = "Waiting for the camera";
-  }
-}
-
-let lastVideoTime = -1;
-let lastDrawnRect = "";
-
-function drawFrame() {
-  const video = els.video;
-  const W = els.preview.width;
-  const H = els.preview.height;
-  const MW = els.mapCanvas.width;
-  const MH = els.mapCanvas.height;
-  previewCtx.setTransform(1, 0, 0, 1, 0, 0);
-  previewCtx.clearRect(0, 0, W, H);
-  mapCtx.setTransform(1, 0, 0, 1, 0, 0);
-  mapCtx.clearRect(0, 0, MW, MH);
-  if (!(video.videoWidth > 0 && video.videoHeight > 0) || video.readyState < 2) {
-    return;
-  }
-  const { rect } = currentCrop();
-  const mirror = desired.framing.mirror;
-
-  previewCtx.imageSmoothingQuality = "high";
-  if (mirror) {
-    previewCtx.setTransform(-1, 0, 0, 1, W, 0);
-  }
-  previewCtx.drawImage(video, rect.x, rect.y, rect.width, rect.height, 0, 0, W, H);
-  previewCtx.setTransform(1, 0, 0, 1, 0, 0);
-
-  // The map shows the whole camera frame.
-  if (mirror) {
-    mapCtx.setTransform(-1, 0, 0, 1, MW, 0);
-  }
-  mapCtx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, MW, MH);
-  mapCtx.setTransform(1, 0, 0, 1, 0, 0);
-
-  // Expose the source rectangle drawn, so it can be checked against the engine maths.
-  const d = els.preview.dataset;
-  const text = [rect.x, rect.y, rect.width, rect.height, mirror].join();
-  if (text !== lastDrawnRect) {
-    lastDrawnRect = text;
-    d.srcX = rect.x.toFixed(3);
-    d.srcY = rect.y.toFixed(3);
-    d.srcW = rect.width.toFixed(3);
-    d.srcH = rect.height.toFixed(3);
-    d.mirror = String(mirror);
-  }
-  d.videoW = String(video.videoWidth);
-  d.videoH = String(video.videoHeight);
-  d.outW = String(desired.output_width);
-  d.outH = String(desired.output_height);
-  d.frames = String((Number(d.frames) || 0) + 1);
-}
-
-function loop() {
-  requestAnimationFrame(loop);
-  // Nothing to paint while the window is hidden.
-  if (document.hidden) {
-    return;
-  }
-  const t = els.video.currentTime;
-  if (dirty || t !== lastVideoTime) {
-    lastVideoTime = t;
-    dirty = false;
-    drawFrame();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Pan and zoom by hand: framing map and wheel
-// ---------------------------------------------------------------------------
-
-function zoomBy(amount) {
-  change((s) => {
-    s.framing.zoom = round3(clampOr(s.framing.zoom + amount, ZOOM_MIN, ZOOM_MAX, 1));
-  });
-}
-
-function onWheel(event) {
-  event.preventDefault();
-  // One notch of a mouse wheel is about 100; trackpads send small steady deltas.
-  const delta = Math.max(-200, Math.min(200, event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY));
-  zoomBy(-delta * 0.001);
-}
-
-// Pointer position inside the map as a fraction of the camera frame (mirror undone).
-function mapPoint(event) {
-  const box = els.map.getBoundingClientRect();
-  let fx = (event.clientX - box.left) / box.width;
-  const fy = (event.clientY - box.top) / box.height;
-  if (desired.framing.mirror) {
-    fx = 1 - fx;
-  }
-  return { fx, fy };
-}
-
-const drag = { active: false, dx: 0, dy: 0 };
-
-function panFromMap(point) {
-  const { cam, rect } = currentCrop();
-  const fw = rect.width / cam.w;
-  const fh = rect.height / cam.h;
-  const marginX = 1 - fw;
-  const marginY = 1 - fh;
-  const left = Math.min(Math.max(point.fx - drag.dx, 0), Math.max(marginX, 0));
-  const top = Math.min(Math.max(point.fy - drag.dy, 0), Math.max(marginY, 0));
-  change((s) => {
-    // On an axis with no spare room the pan has no effect, so leave it alone.
-    if (marginX > 1e-6) {
-      s.framing.pan_x = round3(clampOr((left / marginX) * 2 - 1, -1, 1, 0));
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    const s = store.get();
+    const b = s.background;
+    const picture = b.mode === "replace" ? pictureKey(s) : "";
+    invoke("set_settings", {
+      settings: {
+        framing: { zoom: s.zoom, pan_x: s.pan_x, pan_y: s.pan_y, mirror: s.mirror, auto_frame: false },
+        background:
+          b.mode === "blur" ? { mode: "blur", radius: b.radius }
+          : picture ? { mode: "replace", image_path: picture }
+          : { mode: "none" },
+        noise: s.mic.noise ? "light" : "off",
+        output_width: OUTPUT.width,
+        output_height: OUTPUT.height,
+        output_fps: 30,
+        cutout: { cutoff: b.cutoff, softness: b.softness, steadiness: b.steadiness },
+      },
+    }).catch(() => {});
+    if (picture && picture !== sentPicture) {
+      sendPicture(picture, backgroundImage(s));
     }
-    if (marginY > 1e-6) {
-      s.framing.pan_y = round3(clampOr((top / marginY) * 2 - 1, -1, 1, 0));
-    }
-  });
+  }, 200);
 }
 
-function bindMap() {
-  els.map.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) {
+// Names the Replace picture; the Rust side keeps a picture while its name stays the same.
+function pictureKey(s) {
+  const b = s.background;
+  if (b.preset !== "custom") {
+    return `window:${b.preset}`;
+  }
+  if (!b.custom || !customSource) {
+    return "";
+  }
+  let hash = 0;
+  for (let i = 0; i < b.custom.length; i += 97) {
+    hash = (hash * 31 + b.custom.charCodeAt(i)) | 0;
+  }
+  return `window:custom:${b.custom.length}:${hash >>> 0}`;
+}
+
+// The virtual camera cannot read the window's canvas, so it gets the picture as a JPEG.
+function sendPicture(key, source) {
+  if (!source) {
+    return;
+  }
+  const width = source.naturalWidth || source.width, height = source.naturalHeight || source.height;
+  const scale = Math.min(1, 1920 / width, 1080 / height);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  canvas.getContext("2d").drawImage(source, 0, 0, canvas.width, canvas.height);
+  sentPicture = key;
+  canvas.toBlob(async (blob) => {
+    try {
+      if (!blob) throw new Error("no picture");
+      await invoke("set_window_picture", new Uint8Array(await blob.arrayBuffer()), { headers: { key } });
+    } catch {
+      if (sentPicture === key) sentPicture = "";
+    }
+  }, "image/jpeg", 0.92);
+}
+
+// ---------------------------------------------------------------------------
+// Moving the picture: zoom, pan, reset
+// ---------------------------------------------------------------------------
+
+// Zooms to `zoom`, keeping the point under `anchor` (0..1 across the frame) where it is.
+function zoomTo(zoom, anchor) {
+  const s = store.get();
+  const next = round3(clamp(zoom, ZOOM_MIN, ZOOM_MAX, 1));
+  const vw = (sources?.video || els.video).videoWidth;
+  const vh = (sources?.video || els.video).videoHeight;
+  if (!(vw > 0) || !cropRect) {
+    store.set({ zoom: next });
+    return;
+  }
+  const from = cropRect(vw, vh, OUTPUT.width, OUTPUT.height, s);
+  const to = cropRect(vw, vh, OUTPUT.width, OUTPUT.height, { ...s, zoom: next });
+  // The picture may be mirrored, so a point on screen is the opposite point in the camera.
+  const fx = s.mirror ? 1 - (anchor ? anchor.x : 0.5) : anchor ? anchor.x : 0.5;
+  const fy = anchor ? anchor.y : 0.5;
+  const px = from.x + fx * from.width;
+  const py = from.y + fy * from.height;
+  store.set({ zoom: next, ...panFor(to, px - fx * to.width, py - fy * to.height, vw, vh) });
+}
+
+// Turns a wanted top-left corner of the crop into pan values, which are -1..1 across the
+// space the crop has to move in.
+function panFor(crop, x, y, vw, vh) {
+  const marginX = vw - crop.width;
+  const marginY = vh - crop.height;
+  return {
+    pan_x: marginX > 0.5 ? round3(clamp((x / marginX) * 2 - 1, -1, 1, 0)) : 0,
+    pan_y: marginY > 0.5 ? round3(clamp((y / marginY) * 2 - 1, -1, 1, 0)) : 0,
+  };
+}
+
+function resetFraming() {
+  store.set({ zoom: 1, pan_x: 0, pan_y: 0 });
+}
+
+function bindFraming() {
+  els.zoom.addEventListener("input", () => zoomTo(Number(els.zoom.value), null));
+  els.zoomOut.addEventListener("click", () => zoomTo(store.get().zoom - 0.25, null));
+  els.zoomIn.addEventListener("click", () => zoomTo(store.get().zoom + 0.25, null));
+  els.mirror.addEventListener("click", () => store.set({ mirror: !store.get().mirror }));
+  els.gridToggle.addEventListener("click", () => store.set({ grid: !store.get().grid }));
+  els.reset.addEventListener("click", resetFraming);
+  els.frame.addEventListener("dblclick", resetFraming);
+
+  const anchorOf = (event) => {
+    const box = els.frame.getBoundingClientRect();
+    return { x: clamp((event.clientX - box.left) / box.width, 0, 1, 0.5), y: clamp((event.clientY - box.top) / box.height, 0, 1, 0.5) };
+  };
+
+  els.frame.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      const delta = Math.max(-120, Math.min(120, event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY));
+      zoomTo(store.get().zoom * Math.exp(-delta * 0.004), anchorOf(event));
+    },
+    { passive: false },
+  );
+
+  // Pinch on a trackpad arrives as gesture events in this web view.
+  let pinchFrom = 1;
+  els.frame.addEventListener("gesturestart", (event) => {
+    event.preventDefault();
+    pinchFrom = store.get().zoom;
+  });
+  els.frame.addEventListener("gesturechange", (event) => {
+    event.preventDefault();
+    zoomTo(pinchFrom * event.scale, anchorOf(event));
+  });
+
+  // Drag the picture: it follows the pointer, the way a map does.
+  let drag = null;
+  els.frame.addEventListener("pointerdown", (event) => {
+    const s = store.get();
+    if (event.target.closest("button") || event.button !== 0 || s.zoom <= ZOOM_MIN + 0.001 || !cropRect || !engine) {
       return;
     }
-    event.preventDefault();
-    els.map.focus();
-    els.map.setPointerCapture(event.pointerId);
-    const { cam, rect } = currentCrop();
-    const r = { x: rect.x / cam.w, y: rect.y / cam.h, w: rect.width / cam.w, h: rect.height / cam.h };
-    const p = mapPoint(event);
-    const inside = p.fx >= r.x && p.fx <= r.x + r.w && p.fy >= r.y && p.fy <= r.y + r.h;
-    // Grab the rectangle where it was hit; a click outside moves its centre to the pointer.
-    drag.dx = inside ? p.fx - r.x : r.w / 2;
-    drag.dy = inside ? p.fy - r.y : r.h / 2;
-    drag.active = true;
-    els.map.classList.add("dragging");
-    panFromMap(p);
+    els.frame.setPointerCapture(event.pointerId);
+    els.frame.classList.add("panning");
+    drag = { x: event.clientX, y: event.clientY, crop: engine.getCrop(), box: els.frame.getBoundingClientRect() };
   });
-  els.map.addEventListener("pointermove", (event) => {
-    if (drag.active) {
-      panFromMap(mapPoint(event));
+  els.frame.addEventListener("pointermove", (event) => {
+    if (!drag) {
+      return;
     }
+    const s = store.get();
+    const vw = (sources?.video || els.video).videoWidth;
+    const vh = (sources?.video || els.video).videoHeight;
+    const dx = (event.clientX - drag.x) * (drag.crop.width / drag.box.width);
+    const dy = (event.clientY - drag.y) * (drag.crop.height / drag.box.height);
+    // A mirrored picture moves the opposite way in the camera.
+    const x = drag.crop.x - (s.mirror ? -dx : dx);
+    const y = drag.crop.y - dy;
+    store.set(panFor(drag.crop, x, y, vw, vh));
   });
-  const end = () => {
-    drag.active = false;
-    els.map.classList.remove("dragging");
+  const endDrag = () => {
+    drag = null;
+    els.frame.classList.remove("panning");
   };
-  els.map.addEventListener("pointerup", end);
-  els.map.addEventListener("pointercancel", end);
-  els.map.addEventListener("lostpointercapture", end);
+  els.frame.addEventListener("pointerup", endDrag);
+  els.frame.addEventListener("pointercancel", endDrag);
 
-  els.map.addEventListener("wheel", onWheel, { passive: false });
-  els.preview.addEventListener("wheel", onWheel, { passive: false });
-
-  els.map.addEventListener("keydown", (event) => {
-    const step = event.shiftKey ? 0.25 : 0.05;
-    const nudge = (key, field, amount) => {
+  // Keyboard: arrows move the picture, plus and minus zoom, zero resets.
+  document.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+    // Keys that belong to the control that has focus are left alone: a dropdown types to
+    // search, and radio buttons and sliders use the arrows. The other shortcuts still work
+    // after clicking one of them, which is where focus usually sits.
+    const target = event.target;
+    const tag = target && target.tagName;
+    const usesArrows = tag === "SELECT" || tag === "TEXTAREA" || (tag === "INPUT" && ["radio", "range", "text"].includes(target.type));
+    if (tag === "SELECT" || tag === "TEXTAREA" || (tag === "INPUT" && target.type === "text")) {
+      return;
+    }
+    if (usesArrows && event.key.startsWith("Arrow")) {
+      return;
+    }
+    const s = store.get();
+    const step = event.shiftKey ? 0.25 : 0.08;
+    const nudge = (key, value) => {
       event.preventDefault();
-      change((s) => {
-        s.framing[field] = round3(clampOr(s.framing[field] + amount, -1, 1, 0));
-      });
+      store.set({ [key]: round3(clamp(value, -1, 1, 0)) });
     };
     switch (event.key) {
       case "ArrowLeft":
-        // With mirror on, the picture moves the other way on screen.
-        return nudge(event.key, "pan_x", desired.framing.mirror ? step : -step);
+        return nudge("pan_x", s.pan_x + (s.mirror ? step : -step));
       case "ArrowRight":
-        return nudge(event.key, "pan_x", desired.framing.mirror ? -step : step);
+        return nudge("pan_x", s.pan_x + (s.mirror ? -step : step));
       case "ArrowUp":
-        return nudge(event.key, "pan_y", -step);
+        return nudge("pan_y", s.pan_y - step);
       case "ArrowDown":
-        return nudge(event.key, "pan_y", step);
+        return nudge("pan_y", s.pan_y + step);
       case "+":
       case "=":
         event.preventDefault();
-        return zoomBy(0.1);
+        return zoomTo(s.zoom + 0.25, null);
       case "-":
       case "_":
         event.preventDefault();
-        return zoomBy(-0.1);
+        return zoomTo(s.zoom - 0.25, null);
+      case "0":
+        event.preventDefault();
+        return resetFraming();
+      case "m":
+      case "M":
+        return store.set({ mirror: !s.mirror });
+      case "g":
+      case "G":
+        return store.set({ grid: !s.grid });
       default:
     }
   });
 }
 
 // ---------------------------------------------------------------------------
-// Controls
+// Background: none, blur, or a picture
 // ---------------------------------------------------------------------------
 
-function bindControls() {
-  document.querySelectorAll(".fader").forEach(buildTicks);
+function buildSwatches() {
+  const tiles = PRESETS.map((preset) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "swatch";
+    button.dataset.preset = preset.id;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-label", preset.name);
+    button.title = preset.name;
+    const canvas = document.createElement("canvas");
+    canvas.width = 160;
+    canvas.height = 90;
+    drawPreset(canvas.getContext("2d"), 160, 90, preset);
+    button.append(canvas);
+    button.addEventListener("click", () => store.set({ background: { preset: preset.id } }));
+    return button;
+  });
 
-  bindFader(els.zoom, (v) =>
-    change((s) => (s.framing.zoom = round3(clampOr(v, ZOOM_MIN, ZOOM_MAX, DEFAULT_ZOOM)))),
-  );
-  bindFader(els.panX, (v) => change((s) => (s.framing.pan_x = round3(clampOr(v, -1, 1, 0)))));
-  bindFader(els.panY, (v) => change((s) => (s.framing.pan_y = round3(clampOr(v, -1, 1, 0)))));
-  els.mirror.addEventListener("change", () => change((s) => (s.framing.mirror = els.mirror.checked)));
+  const choose = document.createElement("button");
+  choose.type = "button";
+  choose.className = "swatch add";
+  choose.title = "Use your own picture";
+  choose.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Choose…</span>';
+  choose.addEventListener("click", () => els.imageFile.click());
 
+  els.swatches.replaceChildren(...tiles, choose);
+}
+
+// The person's own picture gets a tile once there is one.
+function showCustomSwatch(dataUrl) {
+  els.swatches.querySelector("[data-preset=custom]")?.remove();
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "swatch";
+  button.dataset.preset = "custom";
+  button.setAttribute("role", "radio");
+  button.setAttribute("aria-label", "Your picture");
+  button.title = "Your picture";
+  const image = document.createElement("img");
+  image.alt = "";
+  image.src = dataUrl;
+  button.append(image);
+  button.addEventListener("click", () => store.set({ background: { preset: "custom" } }));
+  els.swatches.insertBefore(button, els.swatches.querySelector(".add"));
+  render();
+}
+
+function showEffectProblem(text) {
+  els.effectProblem.hidden = !text;
+  els.effectProblem.textContent = text || "";
+}
+
+function bindBackground() {
+  for (const key of Object.keys(TUNING_DEFAULTS)) $(key).addEventListener("input", () => {
+    store.set({background:{[key]:Number($(key).value)/100}});
+  });
+  $("quality").addEventListener("change", event => store.set({background:{quality:event.target.value}}));
+  $("show-mask").addEventListener("change", () => store.set({background:{view:$("show-mask").checked ? "mask" : "composite"}}));
+  $("reset-tuning").addEventListener("click", () => store.set({background:{...TUNING_DEFAULTS,quality:"balanced",view:"composite"}}));
+  els.swatches.addEventListener("keydown", (event) => {
+    const choices = [...els.swatches.querySelectorAll("[data-preset]")];
+    const index = choices.indexOf(event.target);
+    if (index < 0 || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? choices.length - 1
+      : (index + (event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1) + choices.length) % choices.length;
+    choices[next].click();
+    choices[next].focus();
+  });
   els.bgGroup.addEventListener("change", (event) => {
-    const mode = event.target.value;
-    change((s) => (s.background = backgroundFor(mode)));
+    store.set({ background: { mode: event.target.value } });
   });
-  bindFader(els.blurRadius, (v) => {
-    remembered.radius = Math.round(clampOr(v, 1, 50, DEFAULT_BLUR));
-    change((s) => {
-      if (s.background.mode === "blur") {
-        s.background = backgroundFor("blur");
-      }
-    });
-  });
-  els.imagePath.addEventListener("input", () => {
-    remembered.imagePath = els.imagePath.value;
-  });
-  els.imagePath.addEventListener("change", () => {
-    remembered.imagePath = els.imagePath.value;
-    change((s) => {
-      if (s.background.mode === "replace") {
-        s.background = backgroundFor("replace");
-      }
-    });
-  });
+  els.blur.addEventListener("input", () => store.set({ background: { radius: Number(els.blur.value) } }));
 
-  els.noiseGroup.addEventListener("change", (event) => {
-    const value = event.target.value;
-    change((s) => (s.noise = value));
-  });
-
-  bindMap();
-}
-
-// Thirds guides: a per-person convenience, so it is only remembered when storage works.
-function bindGuides() {
-  const set = (on) => {
-    els.thirds.classList.toggle("on", on);
-    els.thirdsToggle.setAttribute("aria-pressed", String(on));
-    try {
-      localStorage.setItem("thirds", on ? "1" : "0");
-    } catch (err) {
-      // Storage may be blocked. The toggle still works for this session.
+  els.imageFile.addEventListener("change", async () => {
+    const file = els.imageFile.files[0];
+    els.imageFile.value = "";
+    if (!file) {
+      return;
     }
-  };
-  let on = false;
-  try {
-    on = localStorage.getItem("thirds") === "1";
-  } catch (err) {
-    on = false;
-  }
-  els.thirds.classList.toggle("on", on);
-  els.thirdsToggle.setAttribute("aria-pressed", String(on));
-  els.thirdsToggle.addEventListener("click", () => set(els.thirdsToggle.getAttribute("aria-pressed") !== "true"));
+    try {
+      const picked = await loadImageFile(file);
+      customSource = picked.source;
+      showCustomSwatch(picked.dataUrl);
+      store.set({ background: { mode: "replace", preset: "custom", custom: picked.dataUrl } });
+      showEffectProblem("");
+    } catch {
+      showEffectProblem("That file could not be opened as a picture. Try a JPEG or PNG.");
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Camera preview
+// Settings pages: the first page holds Background; the rest are one step in
 // ---------------------------------------------------------------------------
 
-function previewProblem(err) {
-  switch (err && err.name) {
-    case "NotAllowedError":
-    case "SecurityError":
-      return "Camera access was denied. Allow camera access for Webcam Studio in your system settings, then restart the app.";
-    case "NotFoundError":
-    case "OverconstrainedError":
-      return "No camera was found. Connect a camera and pick it from the list.";
-    case "NotReadableError":
-      return "The camera could not be opened. Another app may be using it.";
-    default:
-      return "The preview could not start.";
+const pages = new Map([...els.panel.querySelectorAll(".page")].map((page) => [page.dataset.page, page]));
+const pageStack = ["root"];
+const currentPage = () => pageStack[pageStack.length - 1];
+
+function showPage(name, direction) {
+  for (const [key, page] of pages) {
+    page.hidden = key !== name;
   }
+  const page = pages.get(name);
+  page.classList.remove("from-right", "from-left");
+  // Restart the entrance: a page arrives from the side its row or back button points to.
+  void page.offsetWidth;
+  page.classList.add(direction === "back" ? "from-left" : "from-right");
+  page.scrollTop = 0;
+  const focusTarget = direction === "back"
+    ? page.querySelector(`[data-go="${pageStack.lastLeft || ""}"]`)
+    : page.querySelector(".page-title");
+  focusTarget?.focus({ preventScroll: true });
 }
 
-function setMessage(text) {
-  els.message.textContent = text;
-  els.message.hidden = !text;
+function go(name) {
+  if (!pages.has(name) || currentPage() === name) return;
+  // Opening samples from Advanced and going back should land on Advanced, not loop.
+  const existing = pageStack.indexOf(name);
+  if (existing > 0) pageStack.length = existing;
+  pageStack.push(name);
+  pageStack.lastLeft = null;
+  showPage(name, "forward");
+  if (name === "samples") sources?.listSamples();
 }
 
-function setLive(live) {
-  els.tally.dataset.live = String(live);
-  els.tallyText.textContent = live ? "Live" : "Camera off";
+function back() {
+  if (pageStack.length < 2) return;
+  pageStack.lastLeft = pageStack.pop();
+  showPage(currentPage(), "back");
 }
 
-function stopPreview() {
-  const stream = els.video.srcObject;
-  if (stream) {
-    stream.getTracks().forEach((track) => track.stop());
-    els.video.srcObject = null;
-  }
-  setLive(false);
-  dirty = true;
+function bindPages() {
+  els.panel.addEventListener("click", (event) => {
+    const target = event.target.closest("[data-go], [data-back]");
+    if (!target || target.disabled) return;
+    if (target.hasAttribute("data-back")) back();
+    else go(target.dataset.go);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    if (!els.cameraMenu.hidden) return closeCameraMenu(true);
+    if (event.target?.tagName === "SELECT") return;
+    back();
+  });
 }
 
-async function startPreview(deviceId) {
-  stopPreview();
-  setMessage("");
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    setMessage("This system's web view cannot show a camera preview.");
-    return;
-  }
-  try {
-    const video = deviceId ? { deviceId: { exact: deviceId } } : true;
-    const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
-    stream.getVideoTracks().forEach((track) => track.addEventListener("ended", () => setLive(false)));
-    els.video.srcObject = stream;
-    await refreshCameraList();
-  } catch (err) {
-    setMessage(previewProblem(err));
-  }
+// ---------------------------------------------------------------------------
+// Camera picker under the picture
+// ---------------------------------------------------------------------------
+
+function openCameraMenu() {
+  if (els.cameraButton.disabled) return;
+  els.cameraMenu.hidden = false;
+  els.cameraButton.setAttribute("aria-expanded", "true");
+  (els.cameraMenu.querySelector('[aria-checked="true"]') || els.cameraMenu.querySelector("[role^=menuitem]"))?.focus();
 }
 
-// Labels are only available once the user has allowed camera access.
-async function refreshCameraList() {
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const cameras = devices.filter((d) => d.kind === "videoinput");
-  const active = els.video.srcObject?.getVideoTracks()[0]?.getSettings().deviceId;
-  vcam.previewDevices = cameras;
-  if (vcam.cameras.length > 0) {
-    // The picker lists the native cameras. Make the preview show the one chosen there.
-    syncPreviewToSelection(active);
-    return;
-  }
-  els.camera.replaceChildren(
-    ...cameras.map((cam, i) => {
+function closeCameraMenu(restoreFocus) {
+  if (els.cameraMenu.hidden) return;
+  els.cameraMenu.hidden = true;
+  els.cameraButton.setAttribute("aria-expanded", "false");
+  if (restoreFocus) els.cameraButton.focus();
+}
+
+function chooseCamera(deviceId) {
+  if (deviceId === store.get().camera && sources?.get().active === "camera") return;
+  store.set({ camera: deviceId });
+  sources?.select("camera");
+  startCamera();
+}
+
+function buildCameraMenu(devices, activeId) {
+  const items = devices.map((device, index) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.setAttribute("role", "menuitemradio");
+    item.setAttribute("aria-checked", String(device.deviceId === activeId));
+    item.textContent = device.label || `Camera ${index + 1}`;
+    item.addEventListener("click", () => {
+      closeCameraMenu(true);
+      chooseCamera(device.deviceId);
+    });
+    return item;
+  });
+  const settings = document.createElement("button");
+  settings.type = "button";
+  settings.setAttribute("role", "menuitem");
+  settings.textContent = "Camera settings…";
+  settings.addEventListener("click", () => {
+    closeCameraMenu(false);
+    go("camera");
+  });
+  const rule = document.createElement("hr");
+  els.cameraMenu.replaceChildren(...(items.length ? items : [Object.assign(document.createElement("p"), { textContent: "No camera found" })]), rule, settings);
+  const active = devices.find((d) => d.deviceId === activeId);
+  els.cameraButtonText.textContent = active?.label || (devices.length ? "Camera" : "No camera");
+}
+
+function bindCameraMenu() {
+  els.cameraButton.addEventListener("click", () => (els.cameraMenu.hidden ? openCameraMenu() : closeCameraMenu(false)));
+  els.cameraMenu.addEventListener("keydown", (event) => {
+    const items = [...els.cameraMenu.querySelectorAll("button")];
+    const index = items.indexOf(document.activeElement);
+    if (!["ArrowDown", "ArrowUp", "Home", "End", "Tab"].includes(event.key)) return;
+    if (event.key === "Tab") return closeCameraMenu(false);
+    event.preventDefault();
+    event.stopPropagation();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+      : (index + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length;
+    items[next]?.focus();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest(".camera-pick")) closeCameraMenu(false);
+  });
+}
+
+// The pill on the picture says what the camera is delivering, and only while it is shown.
+function renderFormat() {
+  const showing = cameraFormat && els.notice.hidden && (!sources || sources.get().active === "camera");
+  els.formatChip.hidden = !showing;
+  if (cameraFormat) els.formatText.textContent = cameraFormat;
+}
+
+// ---------------------------------------------------------------------------
+// Camera
+// ---------------------------------------------------------------------------
+
+function showNotice(problem) {
+  const hasSettings = problem.kind === "denied" && hasBackend();
+  els.noticeTitle.textContent = problem.title;
+  els.noticeText.textContent = problem.text;
+  els.noticePrimary.hidden = !hasSettings;
+  els.noticePrimary.onclick = () => invoke("open_privacy_settings", { kind: "camera" }).catch(() => {});
+  els.noticeRetry.hidden = false;
+  els.notice.hidden = sources?.get().active !== "camera";
+  renderFormat();
+}
+
+function fillSelect(select, devices, selectedId, fallbackLabel) {
+  select.replaceChildren(
+    ...devices.map((device, index) => {
       const option = document.createElement("option");
-      option.value = cam.deviceId;
-      option.textContent = cam.label || `Camera ${i + 1}`;
+      option.value = device.deviceId;
+      option.textContent = device.label || `${fallbackLabel} ${index + 1}`;
       return option;
     }),
   );
-  if (active) {
-    els.camera.value = active;
+  select.disabled = devices.length === 0;
+  if (devices.some((d) => d.deviceId === selectedId)) {
+    select.value = selectedId;
   }
 }
 
-function bindVideo() {
-  const refresh = () => {
-    layoutMap();
-    updateMap();
-    dirty = true;
-  };
-  els.video.addEventListener("loadedmetadata", refresh);
-  els.video.addEventListener("resize", refresh);
-  els.video.addEventListener("playing", () => {
-    setLive(true);
-    refresh();
-  });
-  els.video.addEventListener("emptied", () => setLive(false));
-  document.addEventListener("visibilitychange", () => {
-    dirty = true;
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Microphone test: starts only when the person asks, and listens only to show a level.
-// ---------------------------------------------------------------------------
-
-const METER_SEGMENTS = 24;
-const METER_FLOOR_DB = -60;
-const CLIP_SEGMENTS = 2;
-const PEAK_HOLD_MS = 1200;
-const PEAK_FALL_MS = 70;
-
-const mic = { stream: null, audio: null, analyser: null, buffer: null, raf: 0, level: 0, peak: 0, peakAt: 0, fallAt: 0 };
-const meterCells = [];
-
-function buildMeter() {
-  for (let i = 0; i < METER_SEGMENTS; i += 1) {
-    const cell = document.createElement("i");
-    if (i >= METER_SEGMENTS - CLIP_SEGMENTS) {
-      cell.classList.add("clip");
-    }
-    els.micMeter.append(cell);
-    meterCells.push(cell);
+async function refreshCameraList(activeId) {
+  const devices = await camera.list();
+  fillSelect(els.camera, devices, activeId, "Camera");
+  buildCameraMenu(devices, activeId);
+  if (devices.length === 0) {
+    els.camera.replaceChildren(new Option("No camera found", ""));
   }
 }
 
-function paintMeter(lit, peak) {
-  meterCells.forEach((cell, i) => {
-    cell.classList.toggle("lit", i < lit);
-    cell.classList.toggle("peak", peak > 0 && i === peak - 1 && peak > lit);
-  });
-  els.micMeter.dataset.lit = String(lit);
-  els.micMeter.dataset.peak = String(peak);
-}
-
-function micProblem(err) {
-  switch (err && err.name) {
-    case "NotAllowedError":
-    case "SecurityError":
-      return "Microphone access was denied. Allow it in your system settings, then try again.";
-    case "NotFoundError":
-    case "OverconstrainedError":
-      return "No microphone was found.";
-    case "NotReadableError":
-      return "The microphone could not be opened. Another app may be using it.";
-    default:
-      return "The microphone test could not start.";
-  }
-}
-
-function micTick(now) {
-  mic.raf = requestAnimationFrame(micTick);
-  mic.analyser.getFloatTimeDomainData(mic.buffer);
-  let sum = 0;
-  for (let i = 0; i < mic.buffer.length; i += 1) {
-    sum += mic.buffer[i] * mic.buffer[i];
-  }
-  const rms = Math.sqrt(sum / mic.buffer.length);
-  const db = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
-  const target = Math.max(0, Math.min(1, (db - METER_FLOOR_DB) / -METER_FLOOR_DB));
-  // Rises at once, falls steadily.
-  mic.level = target > mic.level ? target : Math.max(target, mic.level - 0.02);
-  const lit = Math.round(mic.level * METER_SEGMENTS);
-
-  if (lit >= mic.peak) {
-    mic.peak = lit;
-    mic.peakAt = now;
-    mic.fallAt = now;
-  } else if (now - mic.peakAt > PEAK_HOLD_MS && now - mic.fallAt > PEAK_FALL_MS) {
-    mic.peak = Math.max(lit, mic.peak - 1);
-    mic.fallAt = now;
-  }
-  paintMeter(lit, mic.peak);
-
-  // The readout follows the same smoothed level as the bar, so the two never disagree.
-  const shown = METER_FLOOR_DB + mic.level * -METER_FLOOR_DB;
-  els.micDb.textContent = mic.level <= 0 ? "\u2212\u221e dB" : `${shown.toFixed(0).replace("-", "\u2212")} dB`;
-  els.micMeter.setAttribute("aria-valuenow", shown.toFixed(0));
-}
-
-async function startMic() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    els.micStatus.textContent = "This system's web view cannot open a microphone.";
+let cameraPending = false;
+async function startCamera() {
+  if (cameraPending || sources?.get().recording) return;
+  cameraPending = true;
+  els.camera.disabled = true;
+  els.cameraButton.disabled = true;
+  els.cameraInfo.textContent = "Opening camera…";
+  cameraFormat = null;
+  renderFormat();
+  els.noticeTitle.textContent = "Opening your camera…";
+  els.noticeText.textContent = "Allow camera access when asked. Your picture stays on this Mac.";
+  els.noticePrimary.hidden = true;
+  els.noticeRetry.hidden = true;
+  els.notice.hidden = sources?.get().active !== "camera";
+  const result = await camera.start(store.get().camera, () =>
+    showNotice({ kind: "other", title: "The camera was disconnected", text: "Reconnect it, or pick another camera, then try again." }),
+  );
+  cameraPending = false;
+  els.cameraButton.disabled = false;
+  if (!result.ok) {
+    showNotice(result.problem);
+    els.cameraInfo.textContent = result.problem.title;
+    await refreshCameraList("").catch(() => {});
     return;
   }
-  els.micToggle.disabled = true;
-  els.micStatus.textContent = "Waiting for permission…";
-  try {
-    mic.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    mic.audio = new AudioCtx();
-    if (mic.audio.state === "suspended") {
-      await mic.audio.resume();
-    }
-    mic.analyser = mic.audio.createAnalyser();
-    mic.analyser.fftSize = 1024;
-    mic.analyser.smoothingTimeConstant = 0;
-    mic.buffer = new Float32Array(mic.analyser.fftSize);
-    // The analyser is not connected to the speakers, so there is no echo.
-    mic.audio.createMediaStreamSource(mic.stream).connect(mic.analyser);
-    mic.level = 0;
-    mic.peak = 0;
-    els.micToggle.textContent = "Stop test";
-    els.micToggle.setAttribute("aria-pressed", "true");
-    els.micStatus.textContent = "Listening. Say something.";
-    mic.raf = requestAnimationFrame(micTick);
-  } catch (err) {
-    stopMic();
-    els.micStatus.textContent = micProblem(err);
-  } finally {
-    els.micToggle.disabled = false;
+  els.notice.hidden = true;
+  const { width, height, frameRate } = result.settings;
+  const fps = frameRate ? ` · ${Math.round(frameRate)} fps` : "";
+  els.cameraInfo.textContent = `${width} × ${height}${fps}`;
+  cameraFormat = `${Math.min(width, height)}p${fps}`;
+  renderFormat();
+  await refreshCameraList(result.deviceId).catch(() => {});
+  if (result.deviceId && result.deviceId !== store.get().camera) {
+    store.set({ camera: result.deviceId });
   }
 }
 
-function stopMic(note) {
-  cancelAnimationFrame(mic.raf);
-  mic.raf = 0;
-  if (mic.stream) {
-    mic.stream.getTracks().forEach((track) => track.stop());
+function bindCamera() {
+  els.camera.addEventListener("change", () => chooseCamera(els.camera.value));
+  els.noticeRetry.addEventListener("click", startCamera);
+  navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+    if (cameraPending || !els.notice.hidden) {
+      return;
+    }
+    refreshCameraList(store.get().camera).catch(() => {});
+    refreshMicList().catch(() => {});
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Microphone
+// ---------------------------------------------------------------------------
+
+const mic = createMic((db, peak) => {
+  const level = clamp((db - FLOOR_DB) / -FLOOR_DB, 0, 1, 0);
+  els.meterBar.style.transform = `scaleX(${level})`;
+  els.meter.classList.toggle("hot", db > -12 && db <= -3);
+  els.meter.classList.toggle("clip", db > -3);
+  const peakLevel = clamp((peak - FLOOR_DB) / -FLOOR_DB, 0, 1, 0);
+  els.meterPeak.style.left = `calc(${peakLevel * 100}% - 2px)`;
+  els.meterPeak.style.opacity = peak > FLOOR_DB + 1 ? "0.8" : "0";
+  els.meter.setAttribute("aria-valuenow", String(Math.round(db)));
+  els.miniMeterBar.style.transform = `scaleX(${level})`;
+});
+
+async function refreshMicList(activeId = store.get().mic.deviceId) {
+  const devices = await mic.list();
+  fillSelect(els.mic, devices, activeId, "Microphone");
+  if (devices.length === 0) {
+    els.mic.replaceChildren(new Option("No microphone found", ""));
   }
-  if (mic.audio) {
-    mic.audio.close().catch(() => {});
+}
+
+let micPending = false;
+async function startMic() {
+  if (micPending) return;
+  micPending = true;
+  els.mic.disabled = true;
+  els.noise.disabled = true;
+  els.micInfo.textContent = "Opening microphone…";
+  els.micSummary.textContent = "Opening microphone…";
+  els.mic.replaceChildren(new Option("Opening microphone…", ""));
+  els.micFix.hidden = true;
+  const s = store.get().mic;
+  const result = await mic.start({ deviceId: s.deviceId, noise: s.noise });
+  micPending = false;
+  els.noise.disabled = false;
+  if (!result.ok) {
+    els.micInfo.textContent = result.problem.text;
+    els.micSummary.textContent = result.problem.text;
+    els.micFix.hidden = !(result.problem.kind === "denied" && hasBackend());
+    await refreshMicList("").catch(() => {});
+    return;
   }
-  mic.stream = null;
-  mic.audio = null;
-  mic.analyser = null;
-  mic.level = 0;
-  mic.peak = 0;
-  paintMeter(0, 0);
-  els.micDb.textContent = "Off";
-  els.micMeter.setAttribute("aria-valuenow", String(METER_FLOOR_DB));
-  els.micToggle.textContent = "Test microphone";
-  els.micToggle.setAttribute("aria-pressed", "false");
-  els.micStatus.textContent = note || "Level check only. Nothing is recorded.";
+  els.micInfo.textContent = s.noise ? "Background noise is reduced." : "Noise reduction is off.";
+  await refreshMicList(result.deviceId).catch(() => {});
+  els.micSummary.textContent = els.mic.selectedOptions[0]?.textContent || "Microphone";
+  if (result.deviceId && result.deviceId !== s.deviceId) {
+    store.set({ mic: { deviceId: result.deviceId } });
+  }
 }
 
 function bindMic() {
-  buildMeter();
-  els.micToggle.addEventListener("click", () => (mic.stream ? stopMic() : startMic()));
-  window.addEventListener("pagehide", () => {
-    if (mic.stream) {
-      stopMic();
-    }
+  els.mic.addEventListener("change", () => {
+    store.set({ mic: { deviceId: els.mic.value } });
+    startMic();
   });
-}
-
-// ---------------------------------------------------------------------------
-// Status bar
-// ---------------------------------------------------------------------------
-
-const OS_NAMES = { linux: "Linux", macos: "macOS", windows: "Windows" };
-
-async function showPlatform() {
-  try {
-    const info = await invoke("platform_info");
-    els.platformOs.textContent = OS_NAMES[info.os] || String(info.os);
-    els.platformBackend.textContent = String(info.camera_backend);
-  } catch (err) {
-    els.platformOs.textContent = "Not available";
-    els.platformBackend.textContent = "Not available";
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Virtual camera: native camera choice, start and stop, setup steps, live status
-// ---------------------------------------------------------------------------
-
-const POLL_MS = 1000;
-const PILL_TEXT = {
-  running: "Virtual camera: on",
-  ready: "Virtual camera: ready",
-  needs_approval: "Virtual camera: needs approval",
-  not_installed: "Virtual camera: not installed",
-  unsupported: "Virtual camera: not available on this system",
-  error: "Virtual camera: error",
-};
-const NOTE_IDLE = "Preview shows framing only. Other effects are applied in the camera output.";
-const NOTE_RUNNING = "Preview shows framing only. The virtual camera carries all effects.";
-
-const vcam = {
-  status: null,
-  cameras: [], // native cameras from `list_native_cameras`
-  previewDevices: [], // getUserMedia devices, used for the preview only
-  selectedId: "",
-  previewSynced: false,
-  busy: "", // "starting" or "stopping" while a command is in flight
-  statusSeq: 0,
-  timer: 0,
-};
-
-function tauriEvents() {
-  return window.__TAURI__ && window.__TAURI__.event;
-}
-
-function rememberCamera(id) {
-  try {
-    localStorage.setItem("native-camera", id);
-  } catch (err) {
-    // Storage may be blocked. The choice still holds for this session.
-  }
-}
-
-function rememberedCamera() {
-  try {
-    return localStorage.getItem("native-camera") || "";
-  } catch (err) {
-    return "";
-  }
-}
-
-function selectedCamera() {
-  return vcam.cameras.find((cam) => cam.id === vcam.selectedId) || null;
-}
-
-async function loadNativeCameras() {
-  try {
-    const list = await invoke("list_native_cameras");
-    vcam.cameras = Array.isArray(list) ? list : [];
-  } catch (err) {
-    // Not available on this system: the picker keeps listing the preview cameras.
-    vcam.cameras = [];
-  }
-  if (vcam.cameras.length > 0) {
-    const wanted = rememberedCamera();
-    vcam.selectedId = vcam.cameras.some((cam) => cam.id === wanted) ? wanted : vcam.cameras[0].id;
-    els.camera.replaceChildren(
-      ...vcam.cameras.map((cam) => {
-        const option = document.createElement("option");
-        option.value = cam.id;
-        option.textContent = cam.name;
-        return option;
-      }),
-    );
-    els.camera.value = vcam.selectedId;
-  }
-  renderVcam();
-}
-
-// The preview comes from the web view, which names cameras differently from the native
-// side. The two are matched by name.
-function previewDeviceFor(cam) {
-  if (!cam) {
-    return undefined;
-  }
-  const match = vcam.previewDevices.find((d) => d.label === cam.name);
-  return match ? match.deviceId : undefined;
-}
-
-function previewDeviceForSelection() {
-  return previewDeviceFor(selectedCamera());
-}
-
-// Once the preview camera names are known, switch the preview to the chosen camera (once).
-function syncPreviewToSelection(activeDeviceId) {
-  if (vcam.previewSynced) {
-    return;
-  }
-  vcam.previewSynced = true;
-  const wanted = previewDeviceForSelection();
-  if (wanted && wanted !== activeDeviceId) {
-    startPreview(wanted);
-  }
-}
-
-function onCameraPicked() {
-  if (vcam.cameras.length === 0) {
-    startPreview(els.camera.value);
-    return;
-  }
-  vcam.selectedId = els.camera.value;
-  rememberCamera(vcam.selectedId);
-  renderVcam();
-  startPreview(previewDeviceForSelection());
-}
-
-function setPill(state, text, title) {
-  els.vcamPill.dataset.state = state;
-  els.vcamPillText.textContent = text;
-  els.vcamPill.title = title || "";
-}
-
-function statText(status) {
-  const fps = Math.round(Number(status.fps) || 0);
-  return `${fps} fps · ${status.frames_dropped} dropped`;
-}
-
-function renderVcam() {
-  const status = vcam.status;
-  const state = status ? status.state : "unknown";
-  const running = state === "running";
-  els.vcamGroup.dataset.state = state;
-
-  // Button
-  let label = running ? "Stop virtual camera" : "Start virtual camera";
-  if (vcam.busy === "starting") {
-    label = "Starting…";
-  } else if (vcam.busy === "stopping") {
-    label = "Stopping…";
-  }
-  els.vcamToggle.textContent = label;
-  els.vcamToggle.setAttribute("aria-pressed", String(running));
-  const canStart = (state === "ready" || state === "error") && !!selectedCamera();
-  els.vcamToggle.disabled = !!vcam.busy || !(running || canStart);
-  els.vcamToggle.title = !running && state === "ready" && !selectedCamera() ? "No camera was found." : "";
-
-  // The camera in use
-  const cam = selectedCamera();
-  const shownName = running && status.camera_name ? status.camera_name : cam ? cam.name : "";
-  els.vcamCamera.hidden = !shownName && state !== "ready";
-  els.vcamCameraName.textContent = shownName || "No camera found";
-
-  // The picker is locked while the camera runs, because the choice only applies at start.
-  els.camera.disabled = running || !!vcam.busy;
-  els.camera.title = running ? "Stop the virtual camera to change the camera." : "";
-  if (running && status.camera_name) {
-    const live = vcam.cameras.find((c) => c.name === status.camera_name);
-    if (live && live.id !== vcam.selectedId) {
-      vcam.selectedId = live.id;
-      els.camera.value = live.id;
-    }
-  }
-
-  // One line: the live numbers while running, otherwise what is going on.
-  els.vcamLine.textContent = !status ? "" : running ? statText(status) : status.message;
-  els.vcamLine.classList.toggle("is-stat", running);
-  els.vcamLine.classList.toggle("mono", running);
-  els.vcamLine.title = running && status.message ? status.message : "";
-
-  // Setup steps
-  const setup = state === "not_installed" || state === "needs_approval";
-  els.vcamSetup.hidden = !setup;
-  els.stepInstall.classList.toggle("is-done", state === "needs_approval");
-  els.stepInstall.classList.toggle("is-active", state === "not_installed");
-  els.stepAllow.classList.toggle("is-active", state === "needs_approval");
-
-  // Status bar and preview label
-  if (status) {
-    setPill(state, PILL_TEXT[state] || "Virtual camera: error", status.message);
-  }
-  els.previewNote.textContent = running ? NOTE_RUNNING : NOTE_IDLE;
-}
-
-async function refreshStatus() {
-  const id = ++vcam.statusSeq;
-  try {
-    const status = await invoke("virtual_camera_status");
-    if (id !== vcam.statusSeq) {
-      return;
-    }
-    vcam.status = status;
-  } catch (err) {
-    if (id !== vcam.statusSeq) {
-      return;
-    }
-    vcam.status = { state: "error", message: `Could not read the virtual camera status: ${err}`, fps: 0, frames_sent: 0, frames_dropped: 0, camera_name: null };
-  }
-  renderVcam();
-}
-
-// Poll only while the window can be seen.
-function startPolling() {
-  if (!vcam.timer) {
-    vcam.timer = setInterval(refreshStatus, POLL_MS);
-  }
-}
-
-function stopPolling() {
-  clearInterval(vcam.timer);
-  vcam.timer = 0;
-}
-
-async function toggleVirtualCamera() {
-  if (vcam.busy) {
-    return;
-  }
-  const running = vcam.status && vcam.status.state === "running";
-  vcam.busy = running ? "stopping" : "starting";
-  renderVcam();
-  try {
-    if (running) {
-      await invoke("stop_virtual_camera");
-    } else {
-      await invoke("start_virtual_camera", { cameraId: vcam.selectedId });
-    }
-    showError("");
-  } catch (err) {
-    showError(String(err));
-  }
-  vcam.busy = "";
-  await refreshStatus();
-}
-
-async function runSetupStep(command) {
-  try {
-    await invoke(command);
-  } catch (err) {
-    showError(String(err));
-  }
-  refreshStatus();
-}
-
-function bindVirtualCamera() {
-  els.vcamToggle.addEventListener("click", toggleVirtualCamera);
-  els.vcamInstall.addEventListener("click", () => runSetupStep("install_camera_extension"));
-  els.vcamAllow.addEventListener("click", () => runSetupStep("open_extension_settings"));
-
-  const events = tauriEvents();
-  if (events && events.listen) {
-    // macOS answers install requests later, and may answer twice (approval, then done).
-    Promise.resolve(events.listen("camera-extension", () => refreshStatus())).catch(() => {});
-  }
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      stopPolling();
-    } else {
-      refreshStatus();
-      startPolling();
-    }
+  els.noise.addEventListener("change", () => {
+    store.set({ mic: { noise: els.noise.checked } });
+    startMic();
   });
-  refreshStatus();
-  if (!document.hidden) {
-    startPolling();
-  }
+  els.micFix.addEventListener("click", () => invoke("open_privacy_settings", { kind: "microphone" }).catch(() => {}));
 }
 
 // ---------------------------------------------------------------------------
+// Start up
+// ---------------------------------------------------------------------------
+
+async function startEngine() {
+  try {
+    const module = await import("./engine/studio-engine.js");
+    cropRect = module.cropRect;
+    OUTPUT = { ...module.OUTPUT_DEFAULT };
+    engine = module.createStudioEngine({ canvas: els.preview, width: OUTPUT.width, height: OUTPUT.height });
+  } catch (err) {
+    showNotice({ kind: "other", title: "The picture could not start", text: String((err && err.message) || err) });
+    return false;
+  }
+  els.frame.style.setProperty("--ar", String(OUTPUT.width / OUTPUT.height));
+  engine.on("status", (status) => {
+    nativeQualityAvailable = status.matting === "native";
+    render();
+    els.effectChip.hidden = status.state !== "loading";
+    showEffectProblem(status.state === "error" ? status.message || "The background effect is not available." : "");
+  });
+  sources = createPreviewSources({ camera:els.video, invoke,
+    onSource(video) {
+      engine.setSource(video);
+      els.notice.hidden = video !== els.video || els.video.readyState >= 2;
+      els.frame.setAttribute("aria-label", `${video === els.video ? "Camera" : "Clip"} preview. Drag to move the picture, scroll to zoom, double-click to reset.`);
+      renderFormat();
+    },
+    onChange: renderSource,
+  });
+  pages.get("samples").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-source], [data-sample]");
+    if (!row || row.disabled) return;
+    if (row.dataset.sample) sources.chooseClip(row.dataset.sample).catch(() => {});
+    else sources.select(row.dataset.source);
+  });
+  $("record-clip").addEventListener("click", () => sources.record());
+  $("source-retry").addEventListener("click", () => {
+    const s = sources.get();
+    if (s.listing === "error") sources.listSamples();
+    if (s.error) sources.retry();
+  });
+  $("use-camera").addEventListener("click", () => sources.select("camera"));
+  renderSource(sources.get());
+  window.addEventListener("pagehide", () => sources.dispose(), {once:true});
+  engine.setMatting("auto");
+  engine.setSource(els.video);
+  engine.start();
+  return true;
+}
+
+const SOURCE_NAMES = { camera: "Your camera", clip: "My clip" };
+const megabytes = (bytes) => `${Math.max(0.1, bytes / 1e6).toFixed(1)} MB`;
+
+function sampleRow(clip, s) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "row";
+  row.dataset.sample = clip.id;
+  row.setAttribute("role", "radio");
+  const selected = s.selected === "sample" && s.clipId === clip.id;
+  row.setAttribute("aria-checked", String(selected));
+  const downloading = selected && s.status === "loading";
+  const tag = downloading ? "Downloading…" : clip.cached ? "Downloaded" : megabytes(clip.bytes);
+  row.innerHTML = '<span class="radio" aria-hidden="true"></span><span class="clip-tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 8.5v7l5.5-3.5z"/></svg></span><span class="row-text"><b></b><small></small></span><span class="tag"></span>';
+  row.querySelector("b").textContent = clip.title || clip.id;
+  row.querySelector("small").textContent = clip.credit ? `${clip.credit}` : "";
+  row.querySelector(".tag").textContent = tag;
+  row.querySelector(".tag").classList.toggle("busy", downloading);
+  return row;
+}
+
+function renderSource(s) {
+  // Sample videos page
+  for (const row of pages.get("samples").querySelectorAll("[data-source]")) {
+    row.setAttribute("aria-checked", String(row.dataset.source === s.selected));
+  }
+  $("clip-options").hidden = s.selected !== "clip";
+  $("record-clip").disabled = s.recording;
+  $("record-clip").textContent = s.recording ? `Recording… ${Math.max(1, Math.ceil(5 - s.progress))}s` : s.hasClip ? "Record again" : "Record 5 seconds";
+  $("record-progress").hidden = !s.recording;
+  $("record-progress").value = s.progress;
+  $("record-hint").textContent = s.recording ? "Recording your camera, without sound" : "Picture only, no sound · kept in memory until you quit";
+  $("clip-summary").textContent = s.hasClip ? "Your 5-second clip · stays on this Mac" : "Record 5 seconds of yourself · stays on this Mac";
+
+  const list = $("sample-list");
+  if (s.manifest) {
+    list.replaceChildren(...s.manifest.clips.map((clip) => sampleRow(clip, s)));
+  } else {
+    const row = document.createElement("div");
+    row.className = "row static";
+    row.innerHTML = '<span class="hint"></span>';
+    row.firstChild.textContent = "Loading samples…";
+    list.replaceChildren(row);
+  }
+  list.hidden = !s.manifest && s.listing === "error";
+  const problem = s.error || s.listError;
+  $("source-error").hidden = !problem;
+  $("source-problem").textContent = problem;
+  $("source-retry").hidden = !(s.listing === "error" || (s.error && s.selected === "sample"));
+
+  els.camera.disabled = s.recording || cameraPending || !els.camera.options.length;
+  els.cameraButton.disabled = s.recording || cameraPending;
+
+  // What the preview shows, said everywhere it matters.
+  const playing = s.active === "sample" ? s.manifest?.clips.find((c) => c.id === s.activeSampleId) : null;
+  const name = playing ? playing.title : SOURCE_NAMES[s.active] || "Your camera";
+  $("source-summary").textContent = s.recording ? "Recording 5 seconds…" : s.active === "camera" ? "Off · showing your camera" : `Showing: ${name}`;
+  $("preview-on").textContent = name;
+
+  const badge = $("source-badge");
+  badge.hidden = s.active === "camera" && !s.recording;
+  $("source-badge-text").textContent = s.recording ? "Recording 5 seconds…" : s.active === "clip" ? "Your 5-second clip" : playing ? `Sample clip · not your camera · ${playing.credit}` : "Sample clip · not your camera";
+  $("use-camera").hidden = s.active === "camera";
+  renderFormat();
+}
 
 async function init() {
-  bindControls();
-  bindGuides();
-  bindVideo();
+  buildSwatches();
+  bindFraming();
+  bindBackground();
+  bindCamera();
   bindMic();
-  els.camera.addEventListener("change", onCameraPicked);
-  new ResizeObserver(layoutViewfinder).observe(els.stageArea);
-  render();
-  requestAnimationFrame(loop);
-  showPlatform();
-  bindVirtualCamera();
-  const before = localChanges;
-  try {
-    const settings = await invoke("get_settings");
-    // If the person already changed something while this was loading, keep their choice.
-    if (localChanges === before) {
-      adopt(settings);
-      render();
-    }
-  } catch (err) {
-    showError(`Could not read the settings: ${err}`);
+  bindPages();
+  bindCameraMenu();
+
+  const saved = store.get().background.custom;
+  if (saved) {
+    imageFromDataUrl(saved)
+      .then((image) => {
+        customSource = image;
+        showCustomSwatch(saved);
+        syncBackend();
+      })
+      .catch(() => store.set({ background: { custom: null, preset: "studio" } }));
   }
-  await loadNativeCameras();
-  startPreview(previewDeviceForSelection());
+
+  const ready = await startEngine();
+  render();
+  if (ready) {
+    // The only things the app asks for on its own: the camera, then the microphone. The
+    // system shows its own question for each, once.
+    await startCamera();
+    await startMic();
+  }
+
+  createMeetings({
+    card: els.meetings,
+    action: els.meetingsAction,
+    info: els.meetingsInfo,
+    previewLabel: () => els.camera.selectedOptions[0]?.textContent || "",
+  }).init();
 }
 
 init();
+
+// Live bindings also let the local evaluation harness exercise the actual app.
+export { engine, store, sources };

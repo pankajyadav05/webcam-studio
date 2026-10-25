@@ -8,6 +8,23 @@ rust-version.workspace = true
 
 [dependencies]
 studio-core.workspace = true
+thiserror.workspace = true
+log.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["NSArray", "NSError", "NSObject", "NSString"] }
+objc2-core-video = { workspace = true, features = ["CVBase", "CVPixelBuffer", "CVBuffer", "CVImageBuffer", "CVReturn", "CVPixelFormatDescription"] }
+objc2-vision = { version = "0.3.2", default-features = false, features = ["std", "VNGeneratePersonSegmentationRequest", "VNStatefulRequest", "VNRequest", "VNRequestHandler", "VNObservation", "VNTypes", "objc2-core-video", "objc2-core-graphics"] }
 
 [lints]
 workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-image-io]
+version = "0.3.2"
+default-features = false
+features = ["std", "CGImageSource", "objc2-core-graphics"]
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-core-foundation]
+workspace = true
+features = ["CFData", "CFDictionary"]

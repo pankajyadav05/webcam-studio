@@ -146,6 +146,50 @@ pub fn extension_installed() -> bool {
     }
 }
 
+/// Whether the running app carries a camera extension that could be installed.
+///
+/// A plain `cargo run` or an unsigned build has none, and then installing can never work, so
+/// the window should not offer it. Only the app bundle layout is checked: the extension
+/// lives in `Contents/Library/SystemExtensions/*.systemextension`.
+pub fn extension_bundled() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent()?.parent().map(std::path::Path::to_path_buf))
+            .is_some_and(|contents| extension_bundled_in(&contents))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Looks for an extension bundle inside the `Contents` folder of an app.
+fn extension_bundled_in(contents: &std::path::Path) -> bool {
+    std::fs::read_dir(contents.join("Library/SystemExtensions")).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|e| e == "systemextension")
+                && entry.path().is_dir()
+        })
+    })
+}
+
+/// The System Settings address for a privacy page. Only fixed pages are allowed, so the
+/// window cannot make the app open anything else.
+pub fn privacy_settings_url(kind: &str) -> Option<&'static str> {
+    match kind {
+        "camera" => Some("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"),
+        "microphone" => {
+            Some("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        }
+        _ => None,
+    }
+}
+
 /// Whether this operating system has a virtual camera backend.
 pub const fn is_supported() -> bool {
     cfg!(target_os = "macos")
@@ -162,6 +206,39 @@ pub fn describe(error: &StudioError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bundle_without_the_extension_cannot_offer_the_virtual_camera() {
+        let contents = std::env::temp_dir().join(format!("ws-bundle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&contents);
+        std::fs::create_dir_all(contents.join("MacOS")).unwrap();
+        assert!(!extension_bundled_in(&contents));
+
+        let ext = contents.join("Library/SystemExtensions/dev.example.Camera.systemextension");
+        std::fs::create_dir_all(&ext).unwrap();
+        assert!(extension_bundled_in(&contents));
+
+        // A stray file that is not an extension bundle does not count.
+        std::fs::remove_dir_all(&ext).unwrap();
+        std::fs::write(contents.join("Library/SystemExtensions/readme.txt"), "x").unwrap();
+        assert!(!extension_bundled_in(&contents));
+        let _ = std::fs::remove_dir_all(&contents);
+    }
+
+    #[test]
+    fn privacy_pages_are_known_for_camera_and_microphone_only() {
+        assert!(
+            privacy_settings_url("camera")
+                .unwrap()
+                .ends_with("Privacy_Camera")
+        );
+        assert!(
+            privacy_settings_url("microphone")
+                .unwrap()
+                .ends_with("Privacy_Microphone")
+        );
+        assert!(privacy_settings_url("../../etc").is_none());
+    }
 
     fn snapshot(phase: Phase) -> Snapshot {
         Snapshot {

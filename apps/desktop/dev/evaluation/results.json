@@ -1,0 +1,422 @@
+{
+  "summary": {
+    "old": {
+      "fps": 30.0,
+      "mask_rate": 16.994901529591772,
+      "mask_latency_ms": 10.199999995529652,
+      "mask_age_p50_frames": 0.5150099999999647,
+      "mask_age_p90_frames": 1.5159899999999915,
+      "render_submission_ms": 0.15716822851715967,
+      "long_tasks": 0,
+      "pooled_flicker": 0.0681642110645771
+    },
+    "new": {
+      "fps": 30.0,
+      "mask_rate": 30.0,
+      "mask_latency_ms": 41.59999999552974,
+      "mask_age_p50_frames": 0.0,
+      "mask_age_p90_frames": 0.0,
+      "render_submission_ms": 0.10000000894069672,
+      "long_tasks": 0,
+      "pooled_flicker": 0.07045995995402336
+    },
+    "raw": {
+      "pooled_flicker": 0.08210795275866985
+    }
+  },
+  "public_metrics": [
+    {
+      "clip": "wave",
+      "model": "old",
+      "flicker": 0.04826523787859413,
+      "slow_pairs": 18,
+      "alignment_band_px": 19.62253999710083,
+      "leakage_frame_fraction": 0.026874047550154323,
+      "missing_frame_fraction": 0.0016684148341049383
+    },
+    {
+      "clip": "wave",
+      "model": "new",
+      "flicker": 0.019504109397530556,
+      "slow_pairs": 18,
+      "alignment_band_px": 0.6471058888567819,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 0.0,
+      "latency_p50": 29.200000002980232,
+      "latency_p90": 32.84000000059605,
+      "segmentMs_p50": 14.425333976745605,
+      "segmentMs_p90": 19.139484024047853,
+      "temporalMs_p50": 0.3999999910593033,
+      "temporalMs_p90": 0.4400000035762793,
+      "renderMs_p50": 0.10000000894069672,
+      "renderMs_p90": 0.20000000298023224,
+      "readbackMs_p50": 2.2999999970197678,
+      "readbackMs_p90": 2.840000000596047,
+      "long_tasks": 0
+    },
+    {
+      "clip": "wave",
+      "model": "raw",
+      "flicker": 0.024523426468173664,
+      "slow_pairs": 18,
+      "alignment_band_px": 0.0,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 0.0
+    },
+    {
+      "clip": "hair",
+      "model": "old",
+      "flicker": null,
+      "slow_pairs": 0,
+      "alignment_band_px": 36.88418586730957,
+      "leakage_frame_fraction": 0.045343938078703704,
+      "missing_frame_fraction": 0.048457161458333335
+    },
+    {
+      "clip": "hair",
+      "model": "new",
+      "flicker": null,
+      "slow_pairs": 0,
+      "alignment_band_px": 0.6309876171747844,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 5.497685185185186e-07,
+      "latency_p50": 30.25,
+      "latency_p90": 48.4099999949336,
+      "segmentMs_p50": 16.597207069396973,
+      "segmentMs_p90": 28.29336528778076,
+      "temporalMs_p50": 0.6000000089406967,
+      "temporalMs_p90": 0.7000000029802322,
+      "renderMs_p50": 0.10000000894069672,
+      "renderMs_p90": 0.20000000298023224,
+      "readbackMs_p50": 2.3999999910593033,
+      "readbackMs_p90": 3.1900000035762783,
+      "long_tasks": 0
+    },
+    {
+      "clip": "hair",
+      "model": "raw",
+      "flicker": null,
+      "slow_pairs": 0,
+      "alignment_band_px": 0.0,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 0.0
+    },
+    {
+      "clip": "curly",
+      "model": "old",
+      "flicker": 0.033203762490302324,
+      "slow_pairs": 4,
+      "alignment_band_px": 6.138684050242106,
+      "leakage_frame_fraction": 0.00029328703703703705,
+      "missing_frame_fraction": 0.000927734375
+    },
+    {
+      "clip": "curly",
+      "model": "new",
+      "flicker": 0.017843020148575306,
+      "slow_pairs": 4,
+      "alignment_band_px": 0.6685161435604096,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 2.8935185185185185e-08,
+      "latency_p50": 30.100000008940697,
+      "latency_p90": 33.3799999922514,
+      "segmentMs_p50": 13.599395275115967,
+      "segmentMs_p90": 18.581174468994142,
+      "temporalMs_p50": 0.5999999940395355,
+      "temporalMs_p90": 0.6000000089406967,
+      "renderMs_p50": 0.10000000894069672,
+      "renderMs_p90": 0.20000000298023224,
+      "readbackMs_p50": 2.2999999970197678,
+      "readbackMs_p90": 3.289999997615814,
+      "long_tasks": 1
+    },
+    {
+      "clip": "curly",
+      "model": "raw",
+      "flicker": 0.02432380011305213,
+      "slow_pairs": 4,
+      "alignment_band_px": 0.0,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 0.0
+    },
+    {
+      "clip": "chair",
+      "model": "old",
+      "flicker": 0.07756087732202602,
+      "slow_pairs": 53,
+      "alignment_band_px": 93.32296447753906,
+      "leakage_frame_fraction": 0.023566854745370368,
+      "missing_frame_fraction": 0.09636462673611113
+    },
+    {
+      "clip": "chair",
+      "model": "new",
+      "flicker": 0.091736810317017,
+      "slow_pairs": 53,
+      "alignment_band_px": 1.4168537505467733,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 2.092013888888889e-05,
+      "latency_p50": 31.0,
+      "latency_p90": 32.670000003278254,
+      "segmentMs_p50": 13.549354076385498,
+      "segmentMs_p90": 16.780429077148437,
+      "temporalMs_p50": 0.7000000029802322,
+      "temporalMs_p90": 0.7999999970197678,
+      "renderMs_p50": 0.10000000894069672,
+      "renderMs_p90": 0.20000000298023224,
+      "readbackMs_p50": 2.2999999970197678,
+      "readbackMs_p90": 3.0,
+      "long_tasks": 0
+    },
+    {
+      "clip": "chair",
+      "model": "raw",
+      "flicker": 0.10602602981171518,
+      "slow_pairs": 53,
+      "alignment_band_px": 0.0,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 0.0
+    },
+    {
+      "clip": "glasses",
+      "model": "old",
+      "flicker": null,
+      "slow_pairs": 0,
+      "alignment_band_px": 7.183737386067708,
+      "leakage_frame_fraction": 0.00018599537037037038,
+      "missing_frame_fraction": 0.0055967158564814825
+    },
+    {
+      "clip": "glasses",
+      "model": "new",
+      "flicker": null,
+      "slow_pairs": 0,
+      "alignment_band_px": 0.6094879106680552,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 0.0,
+      "latency_p50": 26.799999997019768,
+      "latency_p90": 28.88999999165535,
+      "segmentMs_p50": 12.667832851409912,
+      "segmentMs_p90": 14.77762107849121,
+      "temporalMs_p50": 0.5,
+      "temporalMs_p90": 0.6000000089406967,
+      "renderMs_p50": 0.10000000894069672,
+      "renderMs_p90": 0.20000000298023224,
+      "readbackMs_p50": 2.2000000029802322,
+      "readbackMs_p90": 2.7000000029802322,
+      "long_tasks": 0
+    },
+    {
+      "clip": "glasses",
+      "model": "raw",
+      "flicker": null,
+      "slow_pairs": 0,
+      "alignment_band_px": 0.0,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 0.0
+    },
+    {
+      "clip": "exit",
+      "model": "old",
+      "flicker": null,
+      "slow_pairs": 0,
+      "alignment_band_px": 19.178770465117235,
+      "leakage_frame_fraction": 0.0008979104662698411,
+      "missing_frame_fraction": 0.006021618716931216
+    },
+    {
+      "clip": "exit",
+      "model": "new",
+      "flicker": null,
+      "slow_pairs": 0,
+      "alignment_band_px": 0.49281712076557216,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 0.0,
+      "latency_p50": 25.200000002980232,
+      "latency_p90": 30.150000002980235,
+      "segmentMs_p50": 11.372583389282227,
+      "segmentMs_p90": 16.208128356933592,
+      "temporalMs_p50": 0.5,
+      "temporalMs_p90": 0.5999999940395355,
+      "renderMs_p50": 0.10000000894069672,
+      "renderMs_p90": 0.20000000298023224,
+      "readbackMs_p50": 2.2000000029802322,
+      "readbackMs_p90": 2.5899999946355825,
+      "long_tasks": 0
+    },
+    {
+      "clip": "exit",
+      "model": "raw",
+      "flicker": null,
+      "slow_pairs": 0,
+      "alignment_band_px": 0.0,
+      "leakage_frame_fraction": 0.0,
+      "missing_frame_fraction": 0.0
+    }
+  ],
+  "native": {
+    "replace": {
+      "fps": 30.25,
+      "maskRate": 30.25,
+      "maskLatencyMs": 36.0,
+      "renderMs": 3.0,
+      "renderP90Ms": 4.0,
+      "foregroundArea": 0.0
+    },
+    "blur": {
+      "fps": 30.0,
+      "maskRate": 30.0,
+      "maskLatencyMs": 36.0,
+      "renderMs": 11.0,
+      "renderP90Ms": 12.0,
+      "foregroundArea": 0.0
+    }
+  },
+  "checks": {
+    "rust_passed": 167,
+    "node_passed": 50,
+    "node_files": 9,
+    "node_failures": 0,
+    "clippy_warnings": 0,
+    "browser": [
+      "PASS privacy, context restore, resize, rapid modes, visibility, orientation/mirror/crop, blur startup",
+      "PASS native error and missing command -> real offline MediaPipe workers"
+    ]
+  },
+  "sha256": {
+    "apps/desktop/ui/engine/studio-engine.js": "933f9b80ab8f5ce26b07148ecb6cbf3b6099fcf93263e3b1ac21512df47d4827",
+    "apps/desktop/ui/engine/compositor.js": "0e2eb250d567be13db34664a83c8fd43387c098dce3ec8656333e9bdcf4e5c11",
+    "apps/desktop/ui/engine/matte.js": "0a4c20174313962dbd022488ca3b04399e96cadc8a05f5521d226fe936371da5",
+    "crates/segmentation/src/vision.rs": "e73ffa00d57b4dea81aab66bf8b45d03adf1de9d19f4c7f831d55a95bd7235b7",
+    "apps/desktop/src-tauri/src/segmentation.rs": "189403d9b228c46a1f312dfc80c39240331de64cdf876b3a57da8e0cf73c1eb6",
+    "target/release/webcam-studio-desktop": "12513a54a2dfcb7cd3c43fa2a34f1d94bb57618b4af7164c7824dcb4687d77a9"
+  },
+  "limitations": [
+    "Absolute flicker target 0.012 not met",
+    "Native render tails exceed the 6 ms target; faint shadow residue remains in the live Replace screenshot",
+    "Final-build live-person acceptance remains unverified because the final camera scene was empty",
+    "Vision reference is not ground truth",
+    "Old contour distance includes model disagreement, not just alignment lag"
+  ],
+  "artifacts": {
+    "public": "/tmp/v5-evaluation",
+    "native_screenshots": "/tmp/v5-shots",
+    "native_trace": "/tmp/v5-shots/canvas-acceptance.jsonl"
+  },
+  "native_cpu": {
+    "blur": {
+      "interval_seconds": 8.017386959007126,
+      "cpu_percent_one_core_100": {
+        "59161": 20.8,
+        "59167": 61.0,
+        "59168": 35.7,
+        "59169": 2.2
+      },
+      "sum": 119.7,
+      "processes": {
+        "59161": "/Users/pankajyadav/projects/webcam-studio/target/release/bundle/macos/Webcam Studio.app/Contents/MacOS/webcam-studio-desktop",
+        "59167": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "59168": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "59169": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+      },
+      "native_before": {
+        "mode": "blur",
+        "maskRate": 30,
+        "foregroundArea": 0,
+        "providerState": {
+          "alignmentDrops": 3,
+          "busy": true,
+          "inFlight": true,
+          "lastLatency": 36,
+          "lastMediaTime": 198.91599999998664,
+          "ready": false,
+          "received": 14198,
+          "ringSize": 4,
+          "stages": {
+            "jpegMs": 7,
+            "phase": "ipc"
+          },
+          "submitted": 14199
+        }
+      },
+      "native_after": {
+        "mode": "blur",
+        "maskRate": 30,
+        "foregroundArea": 0,
+        "providerState": {
+          "alignmentDrops": 3,
+          "busy": true,
+          "inFlight": true,
+          "lastLatency": 33,
+          "lastMediaTime": 206.98799999998448,
+          "ready": false,
+          "received": 14441,
+          "ringSize": 4,
+          "stages": {
+            "jpegMs": 5,
+            "phase": "done",
+            "totalMs": 17
+          },
+          "submitted": 14442
+        }
+      }
+    },
+    "replace": {
+      "interval_seconds": 8.018890207997174,
+      "cpu_percent_one_core_100": {
+        "59161": 24.2,
+        "59167": 64.1,
+        "59168": 39.3,
+        "59169": 2.7
+      },
+      "sum": 130.29999999999998,
+      "processes": {
+        "59161": "/Users/pankajyadav/projects/webcam-studio/target/release/bundle/macos/Webcam Studio.app/Contents/MacOS/webcam-studio-desktop",
+        "59167": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+        "59168": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+        "59169": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+      },
+      "native_before": {
+        "mode": "replace",
+        "maskRate": 30,
+        "foregroundArea": 0,
+        "providerState": {
+          "alignmentDrops": 4,
+          "busy": true,
+          "inFlight": true,
+          "lastLatency": 40,
+          "lastMediaTime": 31.88300000000007,
+          "ready": false,
+          "received": 19392,
+          "ringSize": 4,
+          "stages": {
+            "jpegMs": 6,
+            "phase": "done",
+            "totalMs": 18
+          },
+          "submitted": 19393
+        }
+      },
+      "native_after": {
+        "mode": "replace",
+        "maskRate": 30,
+        "foregroundArea": 0,
+        "providerState": {
+          "alignmentDrops": 4,
+          "busy": true,
+          "inFlight": true,
+          "lastLatency": 39,
+          "lastMediaTime": 39.98300000000001,
+          "ready": false,
+          "received": 19634,
+          "ringSize": 5,
+          "stages": {
+            "jpegMs": 15,
+            "phase": "ipc"
+          },
+          "submitted": 19635
+        }
+      }
+    }
+  }
+}

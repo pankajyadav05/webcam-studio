@@ -2,9 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>Webcam Studio</string>
+	<key>CFBundleName</key>
+	<string>Webcam Studio</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>GPL-3.0-or-later</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Webcam Studio uses your camera to show a preview and to send your picture, with your effects, to the Webcam Studio Camera.</string>
+	<string>Webcam Studio uses your camera to show your picture and apply effects.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Webcam Studio uses your microphone to remove background noise.</string>
+	<string>Webcam Studio uses your microphone to show its level and reduce background noise.</string>
 </dict>
 </plist>

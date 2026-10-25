@@ -5,3 +5,6 @@ node_modules/
 # macOS camera extension: generated Xcode project and build output
 platform/macos/*.xcodeproj/
 platform/macos/build/
+
+# Parked experimental model weights and runtimes (large; kept locally only)
+apps/desktop/dev/experimental/engine/vendor/

@@ -1,13 +1,10 @@
-//! Person segmentation: decides which pixels of a video frame show the person.
-//!
-//! Right now the only implementation is [`FullForegroundSegmenter`], which treats every pixel as
-//! the person, so background effects have no visible result until a real model is wired in.
-//!
-//! Planned real implementation: MediaPipe Selfie Segmentation run through ONNX Runtime as the
-//! fast tier (small and quick enough for CPU-only machines), with Robust Video Matting as an
-//! optional quality tier for machines with a GPU. Smoothing the mask over time (so edges do not
-//! flicker from frame to frame) will also live in this crate. ONNX Runtime is deliberately not a
-//! dependency yet.
+//! Person masks for the native renderer and the browser pipeline.
+
+pub mod person;
+pub mod protocol;
+#[cfg(target_os = "macos")]
+mod vision;
+pub use person::{PersonSegmenter, Quality, VisionSegmenter};
 
 use studio_core::frame::VideoFrame;
 

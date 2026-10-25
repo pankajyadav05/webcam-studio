@@ -37,6 +37,23 @@ pub fn load_background(path: &str) -> Result<VideoFrame, String> {
     Ok(to_frame(&picture))
 }
 
+/// Decodes a picture the window drew (PNG or JPEG bytes) into a BGRA frame.
+pub fn decode_background(bytes: &[u8]) -> Result<VideoFrame, String> {
+    if bytes.is_empty() || bytes.len() > 16 * 1024 * 1024 {
+        return Err("The background picture is empty or too large.".to_string());
+    }
+    let mut picture = image::load_from_memory(bytes).map_err(|e| {
+        format!(
+            "Could not read the background picture: {}",
+            decode_reason(&e)
+        )
+    })?;
+    if picture.width() > MAX_WIDTH || picture.height() > MAX_HEIGHT {
+        picture = picture.resize(MAX_WIDTH, MAX_HEIGHT, FilterType::Triangle);
+    }
+    Ok(to_frame(&picture))
+}
+
 fn io_reason(error: &std::io::Error) -> String {
     match error.kind() {
         std::io::ErrorKind::NotFound => "the file was not found.".to_string(),

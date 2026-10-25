@@ -18,6 +18,7 @@ use studio_capture::CameraCapture;
 use studio_core::device::{OutputFormat, VirtualCamera};
 use studio_core::error::Result as StudioResult;
 use studio_engine::Engine;
+use studio_segmentation::{PersonSegmenter, Quality, VisionSegmenter};
 use studio_vdevice_macos::{OUTPUT_FPS, OUTPUT_HEIGHT, OUTPUT_WIDTH};
 
 use crate::vcam::describe;
@@ -490,6 +491,16 @@ impl Job {
         virtual_camera: &mut dyn VirtualCamera,
     ) -> Result<(), String> {
         let mut failures_in_a_row = 0u32;
+        // Apple Vision's request keeps its own state and must stay on this thread. Without it,
+        // Blur and Replace leave the picture as it is.
+        let mut person = match VisionSegmenter::new() {
+            Ok(vision) => Some(vision),
+            Err(e) => {
+                log::warn!("No person model for the virtual camera: {e}");
+                None
+            }
+        };
+        let mut model_errors = 0u32;
         while !self.cancelled() {
             let frame = match camera.next_frame(self.timeouts.frame) {
                 Ok(Some(frame)) => frame,
@@ -508,7 +519,20 @@ impl Job {
                 if let Some(problem) = size_problem(settings.output_width, settings.output_height) {
                     return Err(problem);
                 }
-                engine.process_video(&frame)
+                match person.as_mut() {
+                    Some(vision) => engine.process_video_with(&frame, &mut |framed| {
+                        vision
+                            .segment_frame(framed, Quality::Balanced)
+                            .map_err(|e| {
+                                model_errors += 1;
+                                if model_errors.is_power_of_two() {
+                                    log::warn!("Person mask failed ({model_errors} so far): {e}");
+                                }
+                            })
+                            .ok()
+                    }),
+                    None => engine.process_video(&frame),
+                }
             };
             if let Some(problem) = size_problem(output.width, output.height) {
                 return Err(problem);

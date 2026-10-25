@@ -85,6 +85,39 @@ fn clamp_or(value: f32, lo: f32, hi: f32, nan_value: f32) -> f32 {
     }
 }
 
+/// The Advanced cutout sliders, each 0..=1 with the shipped look at 0.5.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Cutout {
+    /// "Cut uncertain areas": higher removes more of what the model is unsure about.
+    pub cutoff: f32,
+    /// "Edge softness": higher gives a softer edge.
+    pub softness: f32,
+    /// "Steadiness": higher smooths the mask over a longer time.
+    pub steadiness: f32,
+}
+
+impl Default for Cutout {
+    fn default() -> Self {
+        Self {
+            cutoff: 0.5,
+            softness: 0.5,
+            steadiness: 0.5,
+        }
+    }
+}
+
+impl Cutout {
+    /// Each value clamped to 0..=1; NaN takes the default.
+    pub fn clamped(self) -> Self {
+        Self {
+            cutoff: clamp_or(self.cutoff, 0.0, 1.0, 0.5),
+            softness: clamp_or(self.softness, 0.0, 1.0, 0.5),
+            steadiness: clamp_or(self.steadiness, 0.0, 1.0, 0.5),
+        }
+    }
+}
+
 /// All settings the pipeline reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -101,6 +134,8 @@ pub struct Settings {
     pub output_height: u32,
     /// Output frames per second.
     pub output_fps: u32,
+    /// How the person is cut out in Blur and Replace.
+    pub cutout: Cutout,
 }
 
 impl Default for Settings {
@@ -112,6 +147,7 @@ impl Default for Settings {
             output_width: 1280,
             output_height: 720,
             output_fps: 30,
+            cutout: Cutout::default(),
         }
     }
 }
@@ -157,6 +193,26 @@ mod tests {
     }
 
     #[test]
+    fn cutout_is_clamped_and_missing_fields_take_defaults() {
+        let cutout = Cutout {
+            cutoff: 2.0,
+            softness: f32::NAN,
+            steadiness: -1.0,
+        }
+        .clamped();
+        assert_eq!(
+            cutout,
+            Cutout {
+                cutoff: 1.0,
+                softness: 0.5,
+                steadiness: 0.0
+            }
+        );
+        let old: Settings = serde_json::from_str(r#"{"output_fps":30}"#).unwrap();
+        assert_eq!(old.cutout, Cutout::default());
+    }
+
+    #[test]
     fn settings_json_round_trip() {
         let settings = Settings {
             framing: Framing {
@@ -173,6 +229,11 @@ mod tests {
             output_width: 1920,
             output_height: 1080,
             output_fps: 60,
+            cutout: Cutout {
+                cutoff: 0.75,
+                softness: 0.25,
+                steadiness: 1.0,
+            },
         };
         let json = serde_json::to_string(&settings).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
