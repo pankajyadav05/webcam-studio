@@ -95,7 +95,7 @@ impl ExtensionTracker {
                 self.set(ExtensionPhase::AwaitingApproval);
                 event(
                     "needs_approval",
-                    "Allow Webcam Studio in System Settings to finish installing the camera.",
+                    "In System Settings, under Camera Extensions, turn on Webcam Studio. Then come back here.",
                 )
             }
             Update::AfterReboot => {

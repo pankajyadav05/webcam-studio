@@ -12,6 +12,9 @@ export function createMeetings({ card, action, info, previewLabel }) {
   let status = null;
   let busy = "";
   let timer = 0;
+  // Set when the person asks to install, so System Settings opens by itself once macOS
+  // wants approval, instead of making them find the page.
+  let installing = false;
 
   const setInfo = (text, problem = false) => {
     info.textContent = text;
@@ -48,6 +51,12 @@ export function createMeetings({ card, action, info, previewLabel }) {
     } catch (err) {
       status = { state: "error", message: String(err.message || err), fps: 0 };
     }
+    if (installing && status.state !== "not_installed") {
+      installing = false;
+      if (status.state === "needs_approval") {
+        invoke("open_extension_settings").catch(() => {});
+      }
+    }
     render();
   }
 
@@ -79,9 +88,11 @@ export function createMeetings({ card, action, info, previewLabel }) {
       } else if (state === "needs_approval") {
         await invoke("open_extension_settings");
       } else {
+        installing = true;
         await invoke("install_camera_extension");
       }
     } catch (err) {
+      installing = false;
       setInfo(String(err.message || err), true);
     }
     busy = "";
