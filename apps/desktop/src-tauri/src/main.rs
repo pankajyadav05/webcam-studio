@@ -199,6 +199,7 @@ fn main() {
             background::open_settings,
             background::quit_app,
             background::hide_menu_panel,
+            background::fit_menu_panel,
             auto_camera::meeting_camera_enabled,
             auto_camera::set_meeting_camera_enabled,
             open_privacy_settings,

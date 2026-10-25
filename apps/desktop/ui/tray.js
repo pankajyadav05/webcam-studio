@@ -43,6 +43,13 @@ document.addEventListener("keydown", (event) => {
   if (event.metaKey && event.key.toLowerCase() === "q") { event.preventDefault(); invoke("quit_app"); }
 });
 
+// The window is as tall as its content, whatever the system font measures.
+function fit() {
+  const height = Math.ceil(document.querySelector(".panel").getBoundingClientRect().height);
+  invoke("fit_menu_panel", { height }).catch(() => {});
+}
+new ResizeObserver(fit).observe(document.querySelector(".panel"));
+
 listen("panel-shown", refresh);
 listen("meeting-camera-switched", refresh);
 setInterval(() => { if (!document.hidden) refresh(); }, 1000);

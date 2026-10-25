@@ -109,6 +109,16 @@ pub fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
+/// Makes the panel exactly as tall as its content (in points).
+#[tauri::command]
+pub fn fit_menu_panel(app: AppHandle, height: f64) {
+    if let Some(panel) = app.get_webview_window(PANEL) {
+        if height.is_finite() && (80.0..=600.0).contains(&height) {
+            let _ = panel.set_size(LogicalSize::new(PANEL_WIDTH, height));
+        }
+    }
+}
+
 #[tauri::command]
 pub fn hide_menu_panel(app: AppHandle) {
     hide_panel(&app);
