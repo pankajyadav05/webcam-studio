@@ -10,8 +10,8 @@ import { createStore, clamp, ZOOM_MIN, ZOOM_MAX } from "./lib/store.js";
 import { createCamera } from "./lib/camera.js";
 import { createMic, FLOOR_DB } from "./lib/mic.js";
 import { PRESETS, drawPreset, presetSource, loadImageFile, imageFromDataUrl } from "./lib/backgrounds.js";
-import { createMeetings } from "./lib/meetings.js";
-import { invoke, hasBackend } from "./lib/tauri.js";
+import { createMeetings, bindOpenAtLogin } from "./lib/meetings.js";
+import { invoke, hasBackend, listen } from "./lib/tauri.js";
 import { initWindow } from "./lib/window.js";
 
 initWindow();
@@ -540,6 +540,13 @@ function back() {
 }
 
 function bindPages() {
+  $("settings-button").addEventListener("click", () => (currentPage() === "settings" ? back() : go("settings")));
+  document.addEventListener("keydown", (event) => {
+    if (event.metaKey && event.key === ",") {
+      event.preventDefault();
+      go("settings");
+    }
+  });
   els.panel.addEventListener("click", (event) => {
     const target = event.target.closest("[data-go], [data-back]");
     if (!target || target.disabled) return;
@@ -672,7 +679,7 @@ async function refreshCameraList(activeId) {
 
 let cameraPending = false;
 async function startCamera() {
-  if (cameraPending || sources?.get().recording) return;
+  if (windowHidden || cameraPending || sources?.get().recording) return;
   cameraPending = true;
   els.camera.disabled = true;
   els.cameraButton.disabled = true;
@@ -689,6 +696,11 @@ async function startCamera() {
   );
   cameraPending = false;
   els.cameraButton.disabled = false;
+  if (windowHidden) {
+    // Closed while the camera was opening: let go of it straight away.
+    camera.stop();
+    return;
+  }
   if (!result.ok) {
     showNotice(result.problem);
     els.cameraInfo.textContent = result.problem.title;
@@ -745,7 +757,7 @@ async function refreshMicList(activeId = store.get().mic.deviceId) {
 
 let micPending = false;
 async function startMic() {
-  if (micPending) return;
+  if (windowHidden || micPending) return;
   micPending = true;
   els.mic.disabled = true;
   els.noise.disabled = true;
@@ -756,6 +768,10 @@ async function startMic() {
   const s = store.get().mic;
   const result = await mic.start({ deviceId: s.deviceId, noise: s.noise });
   micPending = false;
+  if (windowHidden) {
+    mic.stop();
+    return;
+  }
   els.noise.disabled = false;
   if (!result.ok) {
     els.micInfo.textContent = result.problem.text;
@@ -901,6 +917,27 @@ function renderSource(s) {
   renderFormat();
 }
 
+// While the window is closed the app lives in the menu bar: the preview, camera and
+// microphone are off, and only meeting apps (through the virtual camera) use the camera.
+let windowHidden = false;
+
+function rest() {
+  if (windowHidden) return;
+  windowHidden = true;
+  sources?.select("camera");
+  engine?.stop();
+  camera.stop();
+  mic.stop();
+}
+
+function wake() {
+  if (!windowHidden) return;
+  windowHidden = false;
+  engine?.start();
+  startCamera();
+  startMic();
+}
+
 async function init() {
   buildSwatches();
   bindFraming();
@@ -921,9 +958,16 @@ async function init() {
       .catch(() => store.set({ background: { custom: null, preset: "studio" } }));
   }
 
+  if (hasBackend()) {
+    windowHidden = !(await invoke("window_visible").catch(() => true));
+    listen("window-visibility", (event) => (event.payload ? wake() : rest()));
+    listen("open-settings", () => go("settings"));
+  }
+
   const ready = await startEngine();
+  if (windowHidden) engine?.stop();
   render();
-  if (ready) {
+  if (ready && !windowHidden) {
     // The only things the app asks for on its own: the camera, then the microphone. The
     // system shows its own question for each, once.
     await startCamera();
@@ -931,11 +975,17 @@ async function init() {
   }
 
   createMeetings({
-    card: els.meetings,
-    action: els.meetingsAction,
+    section: els.meetings,
+    row: $("meeting-row-group"),
+    summary: $("meeting-summary"),
+    dot: $("meeting-dot"),
+    toggle: $("meeting-enabled"),
     info: els.meetingsInfo,
+    setup: $("meetings-setup"),
+    action: els.meetingsAction,
     previewLabel: () => els.camera.selectedOptions[0]?.textContent || "",
   }).init();
+  if (hasBackend()) bindOpenAtLogin($("open-at-login"));
 }
 
 init();

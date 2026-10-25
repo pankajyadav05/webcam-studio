@@ -934,6 +934,14 @@ html[data-keyboard-focus] summary:focus-visible, html[data-keyboard-focus] .text
 .group.padded { gap: 12px; padding: 12px; }
 .group + .group { margin-top: 12px; }
 .meetings h3 { margin: 0; font-size: 13px; font-weight: 600; }
+/* Grid children may shrink below their content, so a long word wraps instead of widening the card. */
+.group > * { min-width: 0; }
+.meetings .hint { overflow-wrap: anywhere; }
+.meeting-dot { flex: none; margin-right: 2px; }
+.row-field.setup { border-top: 1px solid var(--line); padding: 10px 12px; }
+#meetings-info { white-space: normal; overflow: visible; text-overflow: clip; }
+#meetings-info.warn, #meeting-summary.warn { color: var(--warn, #e0a33a); }
+#meetings-info.warn::before, #meeting-summary.warn::before { content: "⚠︎ "; }
 
 .row {
   display: flex;

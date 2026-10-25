@@ -25,7 +25,8 @@ use studio_vdevice_windows as platform;
 #[cfg(target_os = "macos")]
 pub mod macos {
     pub use studio_vdevice_macos::{
-        ActivationOutcome, is_extension_installed, request_activation, request_deactivation,
+        ActivationOutcome, is_extension_installed, meeting_readers, request_activation,
+        request_deactivation,
     };
 }
 

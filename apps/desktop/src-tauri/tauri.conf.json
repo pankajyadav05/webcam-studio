@@ -37,7 +37,8 @@
           ]
         }
       ]
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
@@ -54,7 +55,10 @@
     ],
     "macOS": {
       "entitlements": "macos/WebcamStudio.entitlements",
-      "minimumSystemVersion": "14.0"
+      "minimumSystemVersion": "14.0",
+      "files": {
+        "Resources/Assets.car": "icons/macos/Assets.car"
+      }
     },
     "resources": {
       "icons/source/Credits.html": "Credits.html"

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Webcam Studio</title>
+    <link rel="stylesheet" href="tray.css" />
+  </head>
+  <body>
+    <!-- The menu bar panel: the meeting camera switch and the ways into the app. -->
+    <main class="panel" aria-label="Webcam Studio">
+      <header class="head">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 3.5H6A2.5 2.5 0 0 0 3.5 6v2M16 3.5h2A2.5 2.5 0 0 1 20.5 6v2M3.5 16v2A2.5 2.5 0 0 0 6 20.5h2M16 20.5h2a2.5 2.5 0 0 0 2.5-2.5v-2"/></g><path fill="#e7783f" fill-rule="evenodd" d="M17.2 12a5.2 5.2 0 1 1-10.4 0 5.2 5.2 0 0 1 10.4 0ZM13.55 10.25a1.55 1.55 0 1 0-3.1 0 1.55 1.55 0 0 0 3.1 0ZM9.2 15.2h5.6a2.8 2.8 0 0 0-5.6 0Z"/></svg>
+        <span>Webcam Studio</span>
+      </header>
+
+      <label class="module" id="module">
+        <span class="tile" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h7.5A2.5 2.5 0 0 1 16 8.5v7a2.5 2.5 0 0 1-2.5 2.5H6a2.5 2.5 0 0 1-2.5-2.5zM16 10.5l4.2-2.6a.6.6 0 0 1 .9.5v7.2a.6.6 0 0 1-.9.5L16 13.5"/></svg>
+        </span>
+        <span class="text">
+          <b>Meeting camera</b>
+          <small id="status"><i class="dot" aria-hidden="true"></i><span id="status-text">Checking…</span></small>
+        </span>
+        <input class="switch" id="enabled" type="checkbox" role="switch" aria-describedby="status-text" />
+        <button class="setup" id="setup" type="button" hidden>Set Up</button>
+      </label>
+
+      <nav class="items">
+        <button type="button" id="open">Open Webcam Studio</button>
+        <button type="button" id="settings">Settings<kbd>⌘,</kbd></button>
+        <hr />
+        <button type="button" id="quit">Quit Webcam Studio<kbd>⌘Q</kbd></button>
+      </nav>
+    </main>
+    <script type="module" src="tray.js"></script>
+  </body>
+</html>

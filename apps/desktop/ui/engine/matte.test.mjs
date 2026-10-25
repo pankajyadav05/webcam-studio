@@ -47,3 +47,10 @@ test('reset forgets the previous picture, so the first mask is taken as is',()=>
   filter.apply(new Float32Array(16),33.333,true,lumaOf(90));
   assert.equal(filter.apply(new Float32Array(16).fill(1),33.333,true,lumaOf(90))[0],255);
 });
+test('a camera that starts dark still finds a person who sits still within half a second',()=>{
+  const filter=createMatteFilter(4,4,{hysteresis:false});
+  filter.apply(new Float32Array(16),33.333,true,lumaOf(10)); // first frame: dark, nobody found
+  let alpha=0;const person=new Float32Array(16).fill(1);
+  for(let i=0;i<15;i++)alpha=filter.apply(person,33.333,false,lumaOf(120))[0];
+  assert.ok(alpha>240,`person after 0.5 s: ${alpha}`);
+});

@@ -145,6 +145,13 @@ pub fn is_extension_installed() -> bool {
     cmio::find_device().is_some()
 }
 
+#[cfg(target_os = "macos")]
+/// How many apps read Webcam Studio Camera right now. `None` when the camera is missing or
+/// its extension is too old to say, which means it should be replaced.
+pub fn meeting_readers() -> Option<u32> {
+    cmio::find_device().and_then(cmio::readers)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

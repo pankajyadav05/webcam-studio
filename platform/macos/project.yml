@@ -16,7 +16,7 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
     # Signing is off by default, so this builds on any Mac and in CI. The extension is
     # signed afterwards by scripts/bundle-app.sh, once it sits inside the app.
     CODE_SIGNING_ALLOWED: "NO"

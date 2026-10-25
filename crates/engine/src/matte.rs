@@ -426,6 +426,17 @@ mod tests {
     }
 
     #[test]
+    fn a_camera_that_starts_dark_still_finds_a_still_person_quickly() {
+        let mut f = MatteFilter::new();
+        f.apply(&mask(4, 4, 0), 33.3, Some(&grid(10.0)), 80.0);
+        let mut alpha = 0.0;
+        for _ in 0..15 {
+            alpha = f.apply(&mask(4, 4, 255), 33.3, Some(&grid(120.0)), 80.0)[0];
+        }
+        assert!(alpha > 0.94, "person after 0.5 s: {alpha}");
+    }
+
+    #[test]
     fn reset_takes_the_next_mask_as_it_is() {
         let mut f = MatteFilter::new();
         f.apply(&mask(4, 4, 0), 33.3, Some(&grid(90.0)), 80.0);

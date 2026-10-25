@@ -472,6 +472,7 @@ impl Job {
 
         {
             let mut inner = self.shared.inner();
+            log::info!("Virtual camera reading from {}", camera.name());
             inner.camera_name = Some(camera.name().to_string());
             inner.phase = Phase::Running;
         }
@@ -501,6 +502,16 @@ impl Job {
             }
         };
         let mut model_errors = 0u32;
+        log::info!(
+            "Virtual camera running; person model: {}",
+            if person.is_some() {
+                "Apple Vision"
+            } else {
+                "none"
+            }
+        );
+        // Numbers for the log every five seconds: is the picture lit, does the model find a person?
+        let (mut seen, mut luma_sum, mut person_sum, mut masks) = (0u32, 0f64, 0f64, 0u32);
         while !self.cancelled() {
             let frame = match camera.next_frame(self.timeouts.frame) {
                 Ok(Some(frame)) => frame,
@@ -521,7 +532,7 @@ impl Job {
                 }
                 match person.as_mut() {
                     Some(vision) => engine.process_video_with(&frame, &mut |framed| {
-                        vision
+                        let mask = vision
                             .segment_frame(framed, Quality::Balanced)
                             .map_err(|e| {
                                 model_errors += 1;
@@ -529,13 +540,38 @@ impl Job {
                                     log::warn!("Person mask failed ({model_errors} so far): {e}");
                                 }
                             })
-                            .ok()
+                            .ok();
+                        if let Some(mask) = &mask {
+                            masks += 1;
+                            person_sum += mask_coverage(mask);
+                        }
+                        mask
                     }),
                     None => engine.process_video(&frame),
                 }
             };
             if let Some(problem) = size_problem(output.width, output.height) {
                 return Err(problem);
+            }
+            seen += 1;
+            luma_sum += mean_luma(&frame);
+            if seen == 150 {
+                let background = match &engine_settings_mode(&self.engine) {
+                    Some(mode) => mode.clone(),
+                    None => "unknown".to_string(),
+                };
+                log::info!(
+                    "Last 150 frames: {}x{}, brightness {:.0}/255, background {background}, masks {masks}, person {:.1}% of the picture, model errors so far {model_errors}",
+                    frame.width,
+                    frame.height,
+                    luma_sum / f64::from(seen),
+                    if masks > 0 {
+                        person_sum / f64::from(masks) * 100.0
+                    } else {
+                        0.0
+                    },
+                );
+                (seen, luma_sum, person_sum, masks) = (0, 0.0, 0.0, 0);
             }
 
             match virtual_camera.push_frame(&output) {
@@ -559,6 +595,43 @@ impl Job {
         }
         Ok(())
     }
+}
+
+/// Share of a mask that is the person, 0..=1.
+fn mask_coverage(mask: &studio_segmentation::Mask) -> f64 {
+    if mask.alpha.is_empty() {
+        return 0.0;
+    }
+    mask.alpha.iter().map(|&a| u64::from(a)).sum::<u64>() as f64 / (mask.alpha.len() as f64 * 255.0)
+}
+
+/// Average brightness of a BGRA frame, 0..=255, from a sparse sample of pixels.
+fn mean_luma(frame: &studio_core::frame::VideoFrame) -> f64 {
+    let (mut sum, mut n) = (0u64, 0u64);
+    for y in (0..frame.height as usize).step_by(16) {
+        let Some(row) = frame.data.get(y * frame.stride..) else {
+            break;
+        };
+        for x in (0..frame.width as usize).step_by(16) {
+            if let Some(p) = row.get(x * 4..x * 4 + 3) {
+                sum += (u64::from(p[0]) * 29 + u64::from(p[1]) * 150 + u64::from(p[2]) * 77) >> 8;
+                n += 1;
+            }
+        }
+    }
+    if n == 0 { 0.0 } else { sum as f64 / n as f64 }
+}
+
+/// The background mode the engine is using, for the log.
+fn engine_settings_mode(engine: &Mutex<Engine>) -> Option<String> {
+    let engine = engine.lock().ok()?;
+    Some(match &engine.settings().background {
+        studio_core::settings::BackgroundMode::None => "none".to_string(),
+        studio_core::settings::BackgroundMode::Blur { radius } => format!("blur {radius}"),
+        studio_core::settings::BackgroundMode::Replace { image_path } => {
+            format!("replace ({image_path})")
+        }
+    })
 }
 
 #[cfg(test)]

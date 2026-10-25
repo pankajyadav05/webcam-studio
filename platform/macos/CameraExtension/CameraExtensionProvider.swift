@@ -5,8 +5,8 @@
 //   * a sink stream that the Webcam Studio app writes finished frames into.
 //
 // Every frame the app writes is passed on to the source stream. When the app is not
-// sending (or is not running), the source stream shows a "Webcam Studio is not running"
-// picture instead, so meeting apps never see a frozen or black camera.
+// sending (or is not running), the source stream shows an "Open Webcam Studio to use this
+// camera" picture instead, so meeting apps never see a frozen or black camera.
 //
 // Places where an exact Apple API name or signature should be checked if the compiler
 // complains are marked `CHECK:`.
@@ -40,6 +40,11 @@ enum Contract {
     static let height: Int32 = 720
     static let framesPerSecond: Int32 = 30
     static let pixelFormat: OSType = kCVPixelFormatType_32BGRA
+
+    /// How many apps are reading the camera, as a decimal string. The app polls this to
+    /// turn the real camera on only while a meeting app uses this one. Read by the Rust side
+    /// as the global device property 'wsrd'. Custom properties carry strings or data only.
+    static let readersProperty = CMIOExtensionProperty(rawValue: "4cc_wsrd_glob_0000")
 
     /// After this long without a frame from the app, the placeholder takes over.
     static let appFrameTimeoutNanos: UInt64 = 1_000_000_000
@@ -85,7 +90,7 @@ private func matchesContract(_ pixelBuffer: CVPixelBuffer) -> Bool {
 
 // MARK: - Placeholder picture
 
-/// Draws the "Webcam Studio is not running" picture once, into a buffer from a pool.
+/// Draws the "Open Webcam Studio to use this camera" picture once, into a buffer from a pool.
 /// The same buffer is then sent over and over, so nothing is drawn per frame.
 enum PlaceholderRenderer {
     static func makePixelBuffer() -> CVPixelBuffer? {
@@ -149,7 +154,7 @@ enum PlaceholderRenderer {
                 x: centreX - radius, y: centreY - radius, width: radius * 2, height: radius * 2))
 
         // The message, centred under the dot, in a soft light grey.
-        let text = "Webcam Studio is not running"
+        let text = "Open Webcam Studio to use this camera"
         let font = CTFontCreateWithName("Helvetica Neue" as CFString, 30, nil)
         let grey = CGColor(red: 0.78, green: 0.80, blue: 0.83, alpha: 1)
         let textAttributes: [CFString: Any] = [
@@ -233,7 +238,7 @@ final class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
         }
     }
 
-    var availableProperties: Set<CMIOExtensionProperty> { [.deviceModel] }
+    var availableProperties: Set<CMIOExtensionProperty> { [.deviceModel, Contract.readersProperty] }
 
     func deviceProperties(forProperties properties: Set<CMIOExtensionProperty>) throws
         -> CMIOExtensionDeviceProperties
@@ -242,7 +247,19 @@ final class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
         if properties.contains(.deviceModel) {
             result.model = Contract.model
         }
+        if properties.contains(Contract.readersProperty) {
+            let readers = queue.sync { sourceReaders }
+            result.setPropertyState(
+                CMIOExtensionPropertyState(value: NSString(string: String(readers))),
+                forProperty: Contract.readersProperty)
+        }
         return result
+    }
+
+    /// Tells listening clients the reader count changed. Runs on `queue`.
+    private func announceReaders() {
+        let state = CMIOExtensionPropertyState<AnyObject>(value: NSString(string: String(sourceReaders)))
+        device.notifyPropertiesChanged([Contract.readersProperty: state])
     }
 
     func setDeviceProperties(_ deviceProperties: CMIOExtensionDeviceProperties) throws {
@@ -256,6 +273,7 @@ final class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
         queue.async {
             self.sourceReaders += 1
             if self.timer == nil { self.startTimer() }
+            self.announceReaders()
             log.info("Source stream started, readers: \(self.sourceReaders)")
         }
     }
@@ -265,6 +283,7 @@ final class CameraDeviceSource: NSObject, CMIOExtensionDeviceSource {
         queue.async {
             self.sourceReaders = max(0, self.sourceReaders - 1)
             if self.sourceReaders == 0 { self.stopTimer() }
+            self.announceReaders()
             log.info("Source stream stopped, readers: \(self.sourceReaders)")
         }
     }

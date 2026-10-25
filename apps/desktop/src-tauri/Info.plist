@@ -6,6 +6,8 @@
 	<string>Webcam Studio</string>
 	<key>CFBundleName</key>
 	<string>Webcam Studio</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>GPL-3.0-or-later</string>
 	<key>NSCameraUsageDescription</key>

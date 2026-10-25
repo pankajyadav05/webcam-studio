@@ -22,6 +22,10 @@ pub enum VcamState {
     NotInstalled,
     /// The extension was sent to macOS and waits for the user to allow it.
     NeedsApproval,
+    /// macOS accepted the extension and is bringing up its camera.
+    Finishing,
+    /// macOS loads the extension only after the Mac restarts.
+    NeedsRestart,
     /// The extension is installed and the camera can be started.
     Ready,
     /// Frames are going to the virtual camera.
@@ -120,11 +124,12 @@ pub fn compute_status(facts: &Facts<'_>) -> VcamStatus {
     match facts.extension {
         ExtensionPhase::AwaitingApproval => status(
             VcamState::NeedsApproval,
-            "Allow Webcam Studio in System Settings to finish installing the camera.",
+            "In System Settings, under Camera Extensions, turn on Webcam Studio. Then come back here.",
         ),
+        ExtensionPhase::Activated(_) => status(VcamState::Finishing, "Finishing setup…"),
         ExtensionPhase::RebootPending => status(
-            VcamState::NotInstalled,
-            "Restart your Mac to finish installing the camera.",
+            VcamState::NeedsRestart,
+            "Restart your Mac to finish setting up the meeting camera.",
         ),
         ExtensionPhase::Failed(problem) => status(VcamState::NotInstalled, problem),
         ExtensionPhase::Idle => status(
@@ -146,6 +151,69 @@ pub fn extension_installed() -> bool {
     }
 }
 
+/// How many apps read Webcam Studio Camera, or `None` if the extension does not say (it is
+/// missing, or older than this app).
+pub fn meeting_readers() -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    {
+        studio_vdevice::macos::meeting_readers()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// What macOS already knows about the camera extension, read once at launch so the window
+/// can say "restart your Mac" or "waiting for your approval" without a Set up click first.
+/// `None` when nothing useful is known (not installed, or not on macOS).
+pub fn system_extension_phase() -> Option<ExtensionPhase> {
+    #[cfg(target_os = "macos")]
+    {
+        let id = bundled_extension_id()?;
+        let output = std::process::Command::new("/usr/bin/systemextensionsctl")
+            .arg("list")
+            .output()
+            .ok()?;
+        phase_from_listing(&String::from_utf8_lossy(&output.stdout), &id)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// Reads `systemextensionsctl list` lines for extension `id`. Called only when the camera
+/// device is missing: an enabled extension without its camera is one macOS loads after a
+/// restart; one waiting for the user still needs approval.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn phase_from_listing(listing: &str, id: &str) -> Option<ExtensionPhase> {
+    let states: Vec<&str> = listing
+        .lines()
+        .filter(|line| line.split_whitespace().any(|word| word == id))
+        .filter_map(|line| Some(line.rsplit_once('[')?.1.trim_end().trim_end_matches(']')))
+        .collect();
+    if states.contains(&"activated enabled") {
+        Some(ExtensionPhase::RebootPending)
+    } else if states.iter().any(|s| s.contains("waiting for user")) {
+        Some(ExtensionPhase::AwaitingApproval)
+    } else {
+        None
+    }
+}
+
+/// The bundle id of the extension inside this app, from its folder name.
+#[cfg(target_os = "macos")]
+fn bundled_extension_id() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.parent()?.join("Library/SystemExtensions");
+    std::fs::read_dir(dir).ok()?.flatten().find_map(|entry| {
+        let path = entry.path();
+        (path.extension()? == "systemextension")
+            .then(|| path.file_stem()?.to_str().map(str::to_string))?
+    })
+}
+
 /// Whether the running app carries a camera extension that could be installed.
 ///
 /// A plain `cargo run` or an unsigned build has none, and then installing can never work, so
@@ -165,7 +233,9 @@ pub fn extension_bundled() -> bool {
     }
 }
 
-/// Looks for an extension bundle inside the `Contents` folder of an app.
+/// Looks for an extension bundle inside the `Contents` folder of an app. Only macOS
+/// builds look; the tests cover it everywhere.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn extension_bundled_in(contents: &std::path::Path) -> bool {
     std::fs::read_dir(contents.join("Library/SystemExtensions")).is_ok_and(|entries| {
         entries.flatten().any(|entry| {
@@ -206,6 +276,34 @@ pub fn describe(error: &StudioError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const LISTING: &str = "1 extension(s)\n--- com.apple.system_extension.cmio\nenabled\tactive\tteamID\tbundleID (version)\tname\t[state]\n\t\t88LKBXATSW\tdev.example.CameraExtension (0.1.0/1)\tCamera\t[terminated waiting to uninstall on reboot]\n*\t*\t88LKBXATSW\tdev.example.CameraExtension (0.1.0/2)\tCamera\t[activated enabled]\n";
+
+    #[test]
+    fn an_enabled_extension_without_its_camera_needs_a_restart() {
+        assert_eq!(
+            phase_from_listing(LISTING, "dev.example.CameraExtension"),
+            Some(ExtensionPhase::RebootPending)
+        );
+    }
+
+    #[test]
+    fn a_waiting_extension_needs_approval_and_others_are_ignored() {
+        let waiting =
+            "*\t\tT\tdev.example.CameraExtension (0.1.0/2)\tCamera\t[activated waiting for user]\n";
+        assert_eq!(
+            phase_from_listing(waiting, "dev.example.CameraExtension"),
+            Some(ExtensionPhase::AwaitingApproval)
+        );
+        assert_eq!(
+            phase_from_listing(LISTING, "dev.other.CameraExtension"),
+            None
+        );
+        assert_eq!(
+            phase_from_listing("0 extension(s)\n", "dev.example.CameraExtension"),
+            None
+        );
+    }
 
     #[test]
     fn a_bundle_without_the_extension_cannot_offer_the_virtual_camera() {
@@ -359,8 +457,15 @@ mod tests {
             &ExtensionPhase::RebootPending,
             &snapshot(Phase::Idle),
         );
-        assert_eq!(s.state, VcamState::NotInstalled);
+        assert_eq!(s.state, VcamState::NeedsRestart);
         assert!(s.message.contains("Restart"));
+        let s = status_for(
+            true,
+            false,
+            &ExtensionPhase::Activated(std::time::Instant::now()),
+            &snapshot(Phase::Idle),
+        );
+        assert_eq!(s.state, VcamState::Finishing);
     }
 
     #[test]
@@ -375,6 +480,8 @@ mod tests {
             VcamState::Unsupported,
             VcamState::NotInstalled,
             VcamState::NeedsApproval,
+            VcamState::Finishing,
+            VcamState::NeedsRestart,
             VcamState::Ready,
             VcamState::Running,
             VcamState::Error,
@@ -388,6 +495,8 @@ mod tests {
                 "\"unsupported\"",
                 "\"not_installed\"",
                 "\"needs_approval\"",
+                "\"finishing\"",
+                "\"needs_restart\"",
                 "\"ready\"",
                 "\"running\"",
                 "\"error\""

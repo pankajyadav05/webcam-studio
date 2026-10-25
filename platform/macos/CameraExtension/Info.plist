@@ -15,7 +15,9 @@
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
-	<string>XPC!</string>
+	<string>SYSX</string>
+	<key>NSSystemExtensionUsageDescription</key>
+	<string>Webcam Studio adds a camera that meeting apps can use, showing your picture with its background effects.</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
