@@ -798,8 +798,10 @@ mod tests {
         Pipeline::with_devices(engine, Arc::clone(fake) as Arc<dyn Devices>, quick())
     }
 
+    // Generous: only a stuck test waits this long, and CI runners process debug-build
+    // frames many times slower than a Mac.
     fn wait_for(what: &str, mut condition: impl FnMut() -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(30);
         while !condition() {
             assert!(Instant::now() < deadline, "timed out waiting for {what}");
             std::thread::sleep(Duration::from_millis(5));
