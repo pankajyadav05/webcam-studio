@@ -934,6 +934,9 @@ html[data-keyboard-focus] summary:focus-visible, html[data-keyboard-focus] .text
 .group.padded { gap: 12px; padding: 12px; }
 .group + .group { margin-top: 12px; }
 .meetings h3 { margin: 0; font-size: 13px; font-weight: 600; }
+/* Grid children may shrink below their content, so a long word wraps instead of widening the card. */
+.group > * { min-width: 0; }
+.meetings .hint { overflow-wrap: anywhere; }
 
 .row {
   display: flex;
