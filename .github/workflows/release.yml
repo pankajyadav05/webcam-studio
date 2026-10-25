@@ -82,11 +82,24 @@ jobs:
             last=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
             git log --no-merges --format='- %s' ${last:+"$last"..HEAD} > "$file"
           fi
+          cp "$file" "dist/release/$VERSION/feed-notes.md"
+          cat >> "$file" <<'MD'
+
+          ## Install
+
+          1. Download `Webcam-Studio_*_aarch64.dmg` below, or from https://webcam.codifyit.dev.
+          2. Open the DMG and drag Webcam Studio to the Applications folder.
+          3. Open Webcam Studio. In Settings, click **Set up meeting camera** and allow Webcam Studio in System Settings.
+          4. In your meeting app, choose **Webcam Studio Camera**.
+
+          Needs macOS 14 or later on a Mac with Apple silicon. The app is signed with Developer ID and notarized by Apple.
+          If you already have Webcam Studio, it updates itself: click **Restart to Update** when it asks.
+          MD
           cat "$file"
       - name: Publish to R2
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: scripts/release/publish.sh "$VERSION" "dist/release/$VERSION/notes.md"
+        run: scripts/release/publish.sh "$VERSION" "dist/release/$VERSION/feed-notes.md"
       - name: Tag and GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
