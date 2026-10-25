@@ -8,6 +8,10 @@
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
+
+/// How long a freshly activated extension may take to show its camera.
+const APPEAR_WITHIN: Duration = Duration::from_secs(6);
 
 use serde::Serialize;
 
@@ -25,6 +29,9 @@ pub enum ExtensionPhase {
     Idle,
     /// macOS waits for the user to allow the extension.
     AwaitingApproval,
+    /// macOS says the extension is active. If its camera has not appeared a few seconds
+    /// later, macOS only loads it after a restart (typical when replacing an old version).
+    Activated(Instant),
     /// The extension will work after the next restart.
     RebootPending,
     /// The last request failed. The text says why.
@@ -69,10 +76,17 @@ impl ExtensionTracker {
 
     /// The latest known phase.
     pub fn phase(&self) -> ExtensionPhase {
-        self.phase
+        let phase = self
+            .phase
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+            .clone();
+        match phase {
+            ExtensionPhase::Activated(at) if at.elapsed() >= APPEAR_WITHIN => {
+                ExtensionPhase::RebootPending
+            }
+            other => other,
+        }
     }
 
     /// Forgets an old failure when the person tries again.
@@ -88,7 +102,7 @@ impl ExtensionTracker {
     pub fn apply(&self, update: Update) -> ExtensionEvent {
         match update {
             Update::Activated => {
-                self.set(ExtensionPhase::Idle);
+                self.set(ExtensionPhase::Activated(Instant::now()));
                 event("activated", "The camera is installed.")
             }
             Update::NeedsApproval => {
@@ -228,7 +242,14 @@ mod tests {
 
         let event = tracker.apply(Update::Activated);
         assert_eq!(event.outcome, "activated");
-        assert_eq!(tracker.phase(), ExtensionPhase::Idle);
+        assert!(matches!(tracker.phase(), ExtensionPhase::Activated(_)));
+    }
+
+    #[test]
+    fn an_activation_whose_camera_never_appears_needs_a_restart() {
+        let tracker = ExtensionTracker::new();
+        tracker.set(ExtensionPhase::Activated(Instant::now() - APPEAR_WITHIN));
+        assert_eq!(tracker.phase(), ExtensionPhase::RebootPending);
     }
 
     #[test]

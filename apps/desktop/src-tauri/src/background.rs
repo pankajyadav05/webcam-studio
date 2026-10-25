@@ -104,6 +104,24 @@ pub fn open_settings(app: AppHandle) {
     }
 }
 
+/// Shows macOS's own "Are you sure you want to restart?" dialog. Nothing restarts unless
+/// the person confirms it there.
+#[tauri::command]
+pub fn restart_mac() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/usr/bin/osascript")
+            .args(["-e", "tell application \"loginwindow\" to «event aevtrrst»"])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Could not ask macOS to restart: {e}"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Restart your computer to finish setting up.".to_string())
+    }
+}
+
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     app.exit(0);

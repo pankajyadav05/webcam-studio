@@ -198,6 +198,7 @@ fn main() {
             background::show_main_window,
             background::open_settings,
             background::quit_app,
+            background::restart_mac,
             background::hide_menu_panel,
             background::fit_menu_panel,
             auto_camera::meeting_camera_enabled,

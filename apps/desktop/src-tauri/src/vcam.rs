@@ -22,6 +22,10 @@ pub enum VcamState {
     NotInstalled,
     /// The extension was sent to macOS and waits for the user to allow it.
     NeedsApproval,
+    /// macOS accepted the extension and is bringing up its camera.
+    Finishing,
+    /// macOS loads the extension only after the Mac restarts.
+    NeedsRestart,
     /// The extension is installed and the camera can be started.
     Ready,
     /// Frames are going to the virtual camera.
@@ -122,9 +126,10 @@ pub fn compute_status(facts: &Facts<'_>) -> VcamStatus {
             VcamState::NeedsApproval,
             "In System Settings, under Camera Extensions, turn on Webcam Studio. Then come back here.",
         ),
+        ExtensionPhase::Activated(_) => status(VcamState::Finishing, "Finishing setup…"),
         ExtensionPhase::RebootPending => status(
-            VcamState::NotInstalled,
-            "Restart your Mac to finish installing the camera.",
+            VcamState::NeedsRestart,
+            "Restart your Mac to finish setting up the meeting camera.",
         ),
         ExtensionPhase::Failed(problem) => status(VcamState::NotInstalled, problem),
         ExtensionPhase::Idle => status(
@@ -374,8 +379,15 @@ mod tests {
             &ExtensionPhase::RebootPending,
             &snapshot(Phase::Idle),
         );
-        assert_eq!(s.state, VcamState::NotInstalled);
+        assert_eq!(s.state, VcamState::NeedsRestart);
         assert!(s.message.contains("Restart"));
+        let s = status_for(
+            true,
+            false,
+            &ExtensionPhase::Activated(std::time::Instant::now()),
+            &snapshot(Phase::Idle),
+        );
+        assert_eq!(s.state, VcamState::Finishing);
     }
 
     #[test]
@@ -390,6 +402,8 @@ mod tests {
             VcamState::Unsupported,
             VcamState::NotInstalled,
             VcamState::NeedsApproval,
+            VcamState::Finishing,
+            VcamState::NeedsRestart,
             VcamState::Ready,
             VcamState::Running,
             VcamState::Error,
@@ -403,6 +417,8 @@ mod tests {
                 "\"unsupported\"",
                 "\"not_installed\"",
                 "\"needs_approval\"",
+                "\"finishing\"",
+                "\"needs_restart\"",
                 "\"ready\"",
                 "\"running\"",
                 "\"error\""

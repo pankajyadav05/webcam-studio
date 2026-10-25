@@ -19,32 +19,38 @@ export function createMeetings({ section, row, summary, dot, toggle, info, setup
   // wants approval, instead of making them find the page.
   let installing = false;
 
-  // What to say, in the sidebar row (short) and in Settings (full).
+  // What to say, in the sidebar row (short) and in Settings (full). `blocked` means the
+  // camera cannot be used yet, so the switch is off and greyed out until setup is done.
   function describe() {
     const state = status ? status.state : "unknown";
     const fps = Math.round(Number(status?.fps) || 0);
-    if (state === "unknown") return { short: "Checking…", long: "Checking…" };
-    if (state === "not_installed") return { short: "Not set up yet", long: "Set it up once so meeting apps can choose it.", setup: "Set up meeting camera" };
-    if (state === "needs_approval") return { short: "Waiting for approval", long: status.message, setup: "Open System Settings" };
-    if (state === "unsupported") return { short: "Not available", long: status.message };
+    switch (state) {
+      case "unknown": return { short: "Checking…", long: "Checking…", blocked: true };
+      case "unsupported": return { short: "Not available", long: status.message, blocked: true };
+      case "not_installed": return { short: "Not set up", long: "Not set up yet. Set it up once so meeting apps can choose it.", setup: "Set up meeting camera", blocked: true, warn: true };
+      case "needs_approval": return { short: "Waiting for your approval", long: "Almost there: in System Settings, under Camera Extensions, turn on Webcam Studio.", setup: "Open System Settings", blocked: true, warn: true };
+      case "finishing": return { short: "Finishing setup…", long: "Finishing setup…", blocked: true };
+      case "needs_restart": return { short: "Restart to finish setup", long: "Installed. Restart your Mac to finish setting it up.", setup: "Restart Mac", blocked: true, warn: true };
+    }
     if (!on) return { short: "Off", long: "Off. Meeting apps that choose it see a placeholder." };
-    if (state === "error") return { short: "Problem", long: status.message, setup: "Try again", problem: true };
+    if (state === "error") return { short: "Problem", long: status.message, setup: "Try again", warn: true };
     if (state === "running") return { short: `In use · ${fps} fps`, long: `In use by a meeting app · ${fps} fps`, live: true };
-    return { short: "On · ready", long: "On. Turns your camera on when a meeting uses it." };
+    return { short: "On · waiting for a meeting", long: "On. Turns your camera on when a meeting uses it." };
   }
 
   function render() {
     const view = describe();
     summary.textContent = view.short;
+    summary.classList.toggle("warn", !!view.warn);
     dot.hidden = !view.live;
-    toggle.checked = on;
-    toggle.disabled = !status || status.state === "unsupported";
+    toggle.checked = on && !view.blocked;
+    toggle.disabled = !!view.blocked;
     setup.hidden = !busy && !view.setup;
     action.disabled = !!busy;
     action.textContent = busy || view.setup || "";
     if (!busy) {
       info.textContent = view.long;
-      info.classList.toggle("problem", !!view.problem);
+      info.classList.toggle("warn", !!view.warn);
     }
   }
 
@@ -80,6 +86,8 @@ export function createMeetings({ section, row, summary, dot, toggle, info, setup
     try {
       if (status.state === "needs_approval") {
         await invoke("open_extension_settings");
+      } else if (status.state === "needs_restart") {
+        await invoke("restart_mac");
       } else {
         installing = true;
         await invoke("install_camera_extension");
