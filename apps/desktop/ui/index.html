@@ -14,6 +14,9 @@
         <span>Webcam Studio</span>
       </div>
       <div class="window-actions">
+        <button class="icon-btn" id="settings-button" type="button" aria-label="Settings" title="Settings (⌘,)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.4A7.5 7.5 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.5 7.5 0 0 0 2.6 1.5l.4 2.4h4l.4-2.4a7.5 7.5 0 0 0 2.6-1.5l2.4.9 2-3.4z"/></svg>
+        </button>
         <button class="icon-btn" id="fullscreen" type="button" aria-label="Enter full screen" title="Enter full screen" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 4.5h-4v4m11-4h4v4m-15 7v4h4m11-4v4h-4"/></svg>
         </button>
@@ -140,14 +143,13 @@
           </div>
 
           <!-- Only appears in a build that can really offer a virtual camera. -->
-          <div class="group padded meetings" id="meetings" hidden>
-            <h3 id="h-meetings">Use in meetings</h3>
-            <button class="btn primary wide" id="meetings-action" type="button">Set up</button>
-            <p class="hint" id="meetings-info"></p>
-            <label class="login-row">
-              <span>Open at login<small>Starts in the menu bar, camera off</small></span>
-              <input class="switch" id="open-at-login" type="checkbox" role="switch" />
-            </label>
+          <div class="group" id="meeting-row-group" hidden>
+            <button class="row" type="button" data-go="settings">
+              <span class="row-icon" style="--tint:#e7783f" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h7.5A2.5 2.5 0 0 1 16 8.5v7a2.5 2.5 0 0 1-2.5 2.5H6a2.5 2.5 0 0 1-2.5-2.5zM16 10.5l4.2-2.6a.6.6 0 0 1 .9.5v7.2a.6.6 0 0 1-.9.5L16 13.5"/></svg></span>
+              <span class="row-text"><b>Meeting camera</b><small id="meeting-summary">Checking…</small></span>
+              <i class="live-dot meeting-dot" id="meeting-dot" hidden aria-hidden="true"></i>
+              <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
           </div>
         </section>
 
@@ -256,6 +258,33 @@
           </div>
           <p class="footnote" id="quality-hint">Accurate follows hair and hands more closely, but uses more power.</p>
           <button id="reset-tuning" class="text-btn" type="button">Reset to defaults</button>
+        </section>
+        <section class="page" data-page="settings" aria-labelledby="h-settings" hidden>
+          <button class="back" type="button" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Studio</button>
+          <h1 class="page-title" id="h-settings" tabindex="-1">Settings</h1>
+
+          <div id="meetings" hidden>
+            <h2 class="section-title">Meeting camera</h2>
+            <div class="group">
+              <label class="row static">
+                <span class="row-text"><b>Webcam Studio Camera</b><small id="meetings-info">Checking…</small></span>
+                <input class="switch" id="meeting-enabled" type="checkbox" role="switch" aria-describedby="meetings-info" />
+              </label>
+              <div class="row-field setup" id="meetings-setup" hidden>
+                <button class="btn primary wide" id="meetings-action" type="button">Set up</button>
+              </div>
+            </div>
+            <p class="footnote">In Zoom, Meet or Teams, choose Webcam Studio Camera. Your real camera is on only while a meeting uses it, with the window open or closed.</p>
+          </div>
+
+          <h2 class="section-title">General</h2>
+          <div class="group">
+            <label class="row static">
+              <span class="row-text"><b>Open at login</b><small>Starts in the menu bar, camera off</small></span>
+              <input class="switch" id="open-at-login" type="checkbox" role="switch" />
+            </label>
+          </div>
+          <p class="footnote">Closing the window keeps Webcam Studio in the menu bar. Quit it from there.</p>
         </section>
       </aside>
     </div>

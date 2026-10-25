@@ -5,10 +5,12 @@
 //! frames into the extension); when none has read for a short while, it stops, so the
 //! camera light goes off. An extension too old to say is replaced, once per run.
 
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::pipeline::Phase;
 use crate::state::AppState;
@@ -86,6 +88,82 @@ impl Decider {
     }
 }
 
+/// Tells every window the meeting camera was switched on or off.
+pub const SWITCH_EVENT: &str = "meeting-camera-switched";
+
+/// The quick on/off switch for the meeting camera, remembered across runs. Off means the
+/// real camera never starts for meeting apps; they see the placeholder.
+#[derive(Debug)]
+pub struct MeetingSwitch {
+    on: AtomicBool,
+    path: Option<PathBuf>,
+}
+
+impl Default for MeetingSwitch {
+    fn default() -> Self {
+        Self {
+            on: AtomicBool::new(true),
+            path: None,
+        }
+    }
+}
+
+impl MeetingSwitch {
+    /// Reads the saved choice from `path`; on if there is none.
+    pub fn load(path: PathBuf) -> Self {
+        let on = std::fs::read(&path)
+            .ok()
+            .and_then(|data| serde_json::from_slice::<serde_json::Value>(&data).ok())
+            .and_then(|value| value.get("enabled")?.as_bool())
+            .unwrap_or(true);
+        Self {
+            on: AtomicBool::new(on),
+            path: Some(path),
+        }
+    }
+
+    pub fn is_on(&self) -> bool {
+        self.on.load(Ordering::Relaxed)
+    }
+
+    fn set(&self, on: bool) {
+        self.on.store(on, Ordering::Relaxed);
+        if let Some(path) = &self.path {
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Err(e) = std::fs::write(path, serde_json::json!({ "enabled": on }).to_string()) {
+                log::warn!("Could not remember the meeting camera switch: {e}");
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub fn meeting_camera_enabled(switch: tauri::State<'_, MeetingSwitch>) -> bool {
+    switch.is_on()
+}
+
+/// Switches the meeting camera on or off. Off stops a running camera at once.
+#[tauri::command]
+pub async fn set_meeting_camera_enabled(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    app.state::<MeetingSwitch>().set(enabled);
+    log::info!(
+        "Meeting camera switched {}",
+        if enabled { "on" } else { "off" }
+    );
+    if !enabled {
+        let handle = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            handle.state::<AppState>().stop_virtual_camera()
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    let _ = app.emit(SWITCH_EVENT, enabled);
+    Ok(enabled)
+}
+
 /// The real camera meeting frames come from, by name, as the window last chose it.
 #[derive(Debug, Default)]
 pub struct MeetingCamera {
@@ -125,17 +203,16 @@ pub fn spawn(app: AppHandle) {
         .name("meeting-camera-watch".to_string())
         .spawn(move || {
             let mut decider = Decider::default();
-            let mut said_ready = false;
+
             loop {
                 std::thread::sleep(POLL);
                 let state = app.state::<AppState>();
                 let installed = crate::vcam::extension_installed();
-                let readers = crate::vcam::meeting_readers();
+                // Switched off: behave as if no meeting app were reading.
+                let on = app.state::<MeetingSwitch>().is_on();
+                let readers = crate::vcam::meeting_readers().map(|n| if on { n } else { 0 });
                 let phase = state.pipeline_phase();
-                if installed && readers.is_some() && !said_ready {
-                    said_ready = true;
-                    crate::background::set_status(&app, "Meeting camera: ready, camera off");
-                }
+
                 match decider.decide(Instant::now(), installed, readers, phase) {
                     Action::Nothing => {}
                     Action::Upgrade => {
@@ -155,7 +232,7 @@ pub fn spawn(app: AppHandle) {
                         match started {
                             Ok(_) => {
                                 log::info!("A meeting app opened Webcam Studio Camera; camera on");
-                                crate::background::set_status(&app, "Meeting camera: in use");
+
                                 decider.start_worked();
                             }
                             Err(e) => {
@@ -167,7 +244,6 @@ pub fn spawn(app: AppHandle) {
                     Action::Stop => {
                         log::info!("No meeting app uses Webcam Studio Camera; camera off");
                         state.stop_virtual_camera();
-                        crate::background::set_status(&app, "Meeting camera: ready, camera off");
                     }
                 }
             }
@@ -219,6 +295,16 @@ mod tests {
             d.decide(at(t, 5000), true, Some(0), Phase::Running),
             Action::Stop
         );
+    }
+
+    #[test]
+    fn the_switch_is_on_by_default_and_remembers_off() {
+        let path = std::env::temp_dir().join(format!("meeting-switch-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        assert!(MeetingSwitch::load(path.clone()).is_on());
+        MeetingSwitch::load(path.clone()).set(false);
+        assert!(!MeetingSwitch::load(path.clone()).is_on());
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

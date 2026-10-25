@@ -37,7 +37,8 @@
           ]
         }
       ]
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

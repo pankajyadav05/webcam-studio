@@ -2,32 +2,31 @@
 //! without the window open. While the window is closed the app lives in the menu bar only
 //! (no Dock icon), and the window lets go of the camera and microphone.
 //!
-//! The menu bar icon opens the window, switches the background, turns "Open at Login" on
-//! or off and quits. Launched at login, the app starts with its window closed.
+//! Clicking the menu bar icon opens a small panel (`ui/tray.html`): the meeting camera
+//! switch, Open Webcam Studio, Settings and Quit. Everything else lives in the window.
+//! Launched at login, the app starts with its window closed.
 
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::{TrayIcon, TrayIconBuilder};
-use tauri::{AppHandle, Emitter, Manager, Wry};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::utils::config::WindowEffectsConfig;
+use tauri::window::{Effect, EffectState};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Rect, WebviewUrl,
+    WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_autostart::ManagerExt;
-
-use studio_core::settings::BackgroundMode;
 
 /// Passed by the login item, so the app starts in the menu bar with its window closed.
 pub const HIDDEN_ARG: &str = "--hidden";
 /// Tells the window it was shown (`true`) or closed (`false`).
 pub const VISIBILITY_EVENT: &str = "window-visibility";
-/// Asks the window to switch the background: "none", "blur" or "replace".
-pub const BACKGROUND_EVENT: &str = "tray-background";
+/// Asks the window to show its Settings page.
+pub const SETTINGS_EVENT: &str = "open-settings";
+/// Tells the panel it was opened, so it refreshes at once.
+pub const PANEL_EVENT: &str = "panel-shown";
 
-/// The menu items that change after the menu is built.
-pub struct TrayItems {
-    _tray: TrayIcon,
-    status: MenuItem<Wry>,
-    none: CheckMenuItem<Wry>,
-    blur: CheckMenuItem<Wry>,
-    replace: CheckMenuItem<Wry>,
-    login: CheckMenuItem<Wry>,
-}
+const PANEL: &str = "panel";
+const PANEL_WIDTH: f64 = 304.0;
+const PANEL_HEIGHT: f64 = 206.0;
 
 /// Whether this run was started by the login item.
 pub fn started_hidden() -> bool {
@@ -36,6 +35,7 @@ pub fn started_hidden() -> bool {
 
 /// Shows the window and puts the app back in the Dock.
 pub fn show_window(app: &AppHandle) {
+    hide_panel(app);
     #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     if let Some(window) = app.get_webview_window("main") {
@@ -56,12 +56,62 @@ pub fn hide_window(app: &AppHandle) {
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
 
+fn hide_panel(app: &AppHandle) {
+    if let Some(panel) = app.get_webview_window(PANEL) {
+        let _ = panel.hide();
+    }
+}
+
+/// Opens the panel centred under the menu bar icon, or closes it if it is open.
+fn toggle_panel(app: &AppHandle, icon: Rect) {
+    let Some(panel) = app.get_webview_window(PANEL) else {
+        return;
+    };
+    if panel.is_visible().unwrap_or(false) {
+        let _ = panel.hide();
+        return;
+    }
+    let scale = panel.scale_factor().unwrap_or(2.0);
+    let position = icon.position.to_physical::<f64>(scale);
+    let size = icon.size.to_physical::<f64>(scale);
+    let x = position.x + size.width / 2.0 - PANEL_WIDTH * scale / 2.0;
+    let y = position.y + size.height + 6.0 * scale;
+    let _ = panel.set_position(PhysicalPosition::new(x.max(0.0) as i32, y as i32));
+    let _ = panel.show();
+    let _ = panel.set_focus();
+    let _ = panel.emit(PANEL_EVENT, ());
+}
+
 /// Whether the window is on screen.
 #[tauri::command]
 pub fn window_visible(app: AppHandle) -> bool {
     app.get_webview_window("main")
         .and_then(|window| window.is_visible().ok())
         .unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn show_main_window(app: AppHandle) {
+    show_window(&app);
+}
+
+/// Shows the window on its Settings page.
+#[tauri::command]
+pub fn open_settings(app: AppHandle) {
+    show_window(&app);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.emit(SETTINGS_EVENT, ());
+    }
+}
+
+#[tauri::command]
+pub fn quit_app(app: AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+pub fn hide_menu_panel(app: AppHandle) {
+    hide_panel(&app);
 }
 
 #[tauri::command]
@@ -77,129 +127,56 @@ pub fn set_open_at_login(app: AppHandle, enabled: bool) -> Result<bool, String> 
     } else {
         launcher.disable()
     };
-    result.map_err(|e| format!("Could not change Open at Login: {e}"))?;
-    let now = launcher.is_enabled().unwrap_or(enabled);
-    if let Some(items) = app.try_state::<TrayItems>() {
-        let _ = items.login.set_checked(now);
-    }
-    Ok(now)
+    result.map_err(|e| format!("Could not change Open at login: {e}"))?;
+    Ok(launcher.is_enabled().unwrap_or(enabled))
 }
 
-/// Ticks the background the engine uses now.
-pub fn reflect_background(app: &AppHandle, mode: &BackgroundMode) {
-    let Some(items) = app.try_state::<TrayItems>() else {
-        return;
-    };
-    let _ = items.none.set_checked(matches!(mode, BackgroundMode::None));
-    let _ = items
-        .blur
-        .set_checked(matches!(mode, BackgroundMode::Blur { .. }));
-    let _ = items
-        .replace
-        .set_checked(matches!(mode, BackgroundMode::Replace { .. }));
-}
-
-/// The first line of the menu, about the meeting camera.
-pub fn set_status(app: &AppHandle, text: &str) {
-    if let Some(items) = app.try_state::<TrayItems>() {
-        let _ = items.status.set_text(text);
-    }
-}
-
-/// Builds the menu bar icon and its menu.
+/// Builds the menu bar icon and its (hidden) panel.
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
-    let handle = app.handle();
-    let status = MenuItem::with_id(handle, "status", "Meeting camera: off", false, None::<&str>)?;
-    let none = CheckMenuItem::with_id(handle, "bg-none", "No Effect", true, true, None::<&str>)?;
-    let blur = CheckMenuItem::with_id(
-        handle,
-        "bg-blur",
-        "Blur Background",
-        true,
-        false,
-        None::<&str>,
-    )?;
-    let replace = CheckMenuItem::with_id(
-        handle,
-        "bg-replace",
-        "Replace Background",
-        true,
-        false,
-        None::<&str>,
-    )?;
-    let open = MenuItem::with_id(handle, "open", "Open Webcam Studio", true, None::<&str>)?;
-    let login_on = handle.autolaunch().is_enabled().unwrap_or(false);
-    let login = CheckMenuItem::with_id(
-        handle,
-        "login",
-        "Open at Login",
-        true,
-        login_on,
-        None::<&str>,
-    )?;
-    let quit = MenuItem::with_id(
-        handle,
-        "quit",
-        "Quit Webcam Studio",
-        true,
-        Some("CmdOrCtrl+Q"),
-    )?;
-    let menu = Menu::with_items(
-        handle,
-        &[
-            &status,
-            &PredefinedMenuItem::separator(handle)?,
-            &none,
-            &blur,
-            &replace,
-            &PredefinedMenuItem::separator(handle)?,
-            &open,
-            &login,
-            &PredefinedMenuItem::separator(handle)?,
-            &quit,
-        ],
-    )?;
+    let panel = WebviewWindowBuilder::new(app, PANEL, WebviewUrl::App("tray.html".into()))
+        .title("Webcam Studio")
+        .inner_size(PANEL_WIDTH, PANEL_HEIGHT)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .focused(true)
+        .effects(WindowEffectsConfig {
+            effects: vec![Effect::Popover],
+            state: Some(EffectState::Active),
+            radius: Some(12.0),
+            color: None,
+        })
+        .build()?;
+    let _ = panel.set_size(LogicalSize::new(PANEL_WIDTH, PANEL_HEIGHT));
+    // Like a menu: clicking anywhere else closes it.
+    let handle = app.handle().clone();
+    panel.on_window_event(move |event| {
+        if let WindowEvent::Focused(false) = event {
+            hide_panel(&handle);
+        }
+    });
+
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
-    let tray = TrayIconBuilder::with_id("webcam-studio")
+    TrayIconBuilder::with_id("webcam-studio")
         .icon(icon)
         .icon_as_template(true)
         .tooltip("Webcam Studio")
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "open" => show_window(app),
-            "quit" => app.exit(0),
-            "login" => {
-                let wanted = !open_at_login(app.clone());
-                if let Err(e) = set_open_at_login(app.clone(), wanted) {
-                    log::warn!("{e}");
-                }
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                rect,
+                button: MouseButton::Left | MouseButton::Right,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                toggle_panel(tray.app_handle(), rect);
             }
-            id @ ("bg-none" | "bg-blur" | "bg-replace") => {
-                let mode = id.trim_start_matches("bg-");
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.emit(BACKGROUND_EVENT, mode);
-                }
-                // Tick it now; the window confirms through the settings it sends back.
-                let mode = match mode {
-                    "blur" => BackgroundMode::Blur { radius: 12 },
-                    "replace" => BackgroundMode::Replace {
-                        image_path: String::new(),
-                    },
-                    _ => BackgroundMode::None,
-                };
-                reflect_background(app, &mode);
-            }
-            _ => {}
         })
         .build(app)?;
-    app.manage(TrayItems {
-        _tray: tray,
-        status,
-        none,
-        blur,
-        replace,
-        login,
-    });
     Ok(())
 }

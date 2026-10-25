@@ -32,14 +32,8 @@ fn get_settings(state: State<'_, AppState>) -> Settings {
 
 // Async so that loading a background picture does not block the window.
 #[tauri::command]
-async fn set_settings(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    settings: Settings,
-) -> Result<Settings, String> {
-    let applied = state.set_settings(settings)?;
-    background::reflect_background(&app, &applied.background);
-    Ok(applied)
+async fn set_settings(state: State<'_, AppState>, settings: Settings) -> Result<Settings, String> {
+    state.set_settings(settings)
 }
 
 /// The window's Replace background for the virtual camera. Body: PNG or JPEG bytes; the
@@ -175,6 +169,8 @@ fn main() {
         ))
         .manage(auto_camera::MeetingCamera::default())
         .setup(|app| {
+            let switch = app.path().app_config_dir()?.join("meeting-camera.json");
+            app.manage(auto_camera::MeetingSwitch::load(switch));
             window::setup(app)?;
             background::setup_tray(app)?;
             auto_camera::spawn(app.handle().clone());
@@ -199,6 +195,12 @@ fn main() {
             background::window_visible,
             background::open_at_login,
             background::set_open_at_login,
+            background::show_main_window,
+            background::open_settings,
+            background::quit_app,
+            background::hide_menu_panel,
+            auto_camera::meeting_camera_enabled,
+            auto_camera::set_meeting_camera_enabled,
             open_privacy_settings,
             virtual_camera_status,
             start_virtual_camera,

@@ -10,7 +10,7 @@ import { createStore, clamp, ZOOM_MIN, ZOOM_MAX } from "./lib/store.js";
 import { createCamera } from "./lib/camera.js";
 import { createMic, FLOOR_DB } from "./lib/mic.js";
 import { PRESETS, drawPreset, presetSource, loadImageFile, imageFromDataUrl } from "./lib/backgrounds.js";
-import { createMeetings } from "./lib/meetings.js";
+import { createMeetings, bindOpenAtLogin } from "./lib/meetings.js";
 import { invoke, hasBackend, listen } from "./lib/tauri.js";
 import { initWindow } from "./lib/window.js";
 
@@ -540,6 +540,13 @@ function back() {
 }
 
 function bindPages() {
+  $("settings-button").addEventListener("click", () => (currentPage() === "settings" ? back() : go("settings")));
+  document.addEventListener("keydown", (event) => {
+    if (event.metaKey && event.key === ",") {
+      event.preventDefault();
+      go("settings");
+    }
+  });
   els.panel.addEventListener("click", (event) => {
     const target = event.target.closest("[data-go], [data-back]");
     if (!target || target.disabled) return;
@@ -954,9 +961,7 @@ async function init() {
   if (hasBackend()) {
     windowHidden = !(await invoke("window_visible").catch(() => true));
     listen("window-visibility", (event) => (event.payload ? wake() : rest()));
-    listen("tray-background", (event) => {
-      if (["none", "blur", "replace"].includes(event.payload)) store.set({ background: { mode: event.payload } });
-    });
+    listen("open-settings", () => go("settings"));
   }
 
   const ready = await startEngine();
@@ -970,12 +975,17 @@ async function init() {
   }
 
   createMeetings({
-    card: els.meetings,
-    action: els.meetingsAction,
+    section: els.meetings,
+    row: $("meeting-row-group"),
+    summary: $("meeting-summary"),
+    dot: $("meeting-dot"),
+    toggle: $("meeting-enabled"),
     info: els.meetingsInfo,
-    login: $("open-at-login"),
+    setup: $("meetings-setup"),
+    action: els.meetingsAction,
     previewLabel: () => els.camera.selectedOptions[0]?.textContent || "",
   }).init();
+  if (hasBackend()) bindOpenAtLogin($("open-at-login"));
 }
 
 init();

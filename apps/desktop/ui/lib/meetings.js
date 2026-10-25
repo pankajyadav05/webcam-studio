@@ -1,48 +1,51 @@
-// "Use in meetings": the virtual camera that Zoom, Meet and Teams can pick.
+// "Meeting camera": the virtual camera that Zoom, Meet and Teams can pick.
 //
-// This card only exists when the app can really offer it (a build that carries the camera
-// extension). Everywhere else it stays hidden, so nobody is asked to install something that
-// cannot work.
+// Settings holds the switch, its status and any setup step; the main sidebar has a one-line
+// summary row. Both only exist when the app can really offer the camera (a build that
+// carries the camera extension), so nobody is asked to install something that cannot work.
+// Once set up there is nothing to start: the real camera runs while a meeting uses it.
 
 import { invoke, listen } from "./tauri.js";
 
 const POLL_MS = 1000;
 const CAMERA_KEY = "webcam-studio.meeting-camera";
 
-export function createMeetings({ card, action, info, login, previewLabel }) {
+export function createMeetings({ section, row, summary, dot, toggle, info, setup, action, previewLabel }) {
   let status = null;
+  let on = true;
   let busy = "";
   let timer = 0;
   // Set when the person asks to install, so System Settings opens by itself once macOS
   // wants approval, instead of making them find the page.
   let installing = false;
 
-  const setInfo = (text, problem = false) => {
-    info.textContent = text;
-    info.classList.toggle("problem", problem);
-  };
+  // What to say, in the sidebar row (short) and in Settings (full).
+  function describe() {
+    const state = status ? status.state : "unknown";
+    const fps = Math.round(Number(status?.fps) || 0);
+    if (state === "unknown") return { short: "Checking…", long: "Checking…" };
+    if (state === "not_installed") return { short: "Not set up yet", long: "Set it up once so meeting apps can choose it.", setup: "Set up meeting camera" };
+    if (state === "needs_approval") return { short: "Waiting for approval", long: status.message, setup: "Open System Settings" };
+    if (state === "unsupported") return { short: "Not available", long: status.message };
+    if (!on) return { short: "Off", long: "Off. Meeting apps that choose it see a placeholder." };
+    if (state === "error") return { short: "Problem", long: status.message, setup: "Try again", problem: true };
+    if (state === "running") return { short: `In use · ${fps} fps`, long: `In use by a meeting app · ${fps} fps`, live: true };
+    return { short: "On · ready", long: "On. Turns your camera on when a meeting uses it." };
+  }
 
   function render() {
-    const state = status ? status.state : "unknown";
-    // Ready and in use need nothing from the person: the camera turns on by itself while a
-    // meeting app uses Webcam Studio Camera, and off again afterwards.
-    const label = {
-      not_installed: "Set up virtual camera",
-      needs_approval: "Open System Settings",
-      error: "Try again",
-    }[state];
-    action.hidden = !busy && !label;
-    action.disabled = !!busy || state === "unknown" || state === "unsupported";
-    action.textContent = busy || label || "";
-    if (!status || busy) {
-      return;
+    const view = describe();
+    summary.textContent = view.short;
+    dot.hidden = !view.live;
+    toggle.checked = on;
+    toggle.disabled = !status || status.state === "unsupported";
+    setup.hidden = !busy && !view.setup;
+    action.disabled = !!busy;
+    action.textContent = busy || view.setup || "";
+    if (!busy) {
+      info.textContent = view.long;
+      info.classList.toggle("problem", !!view.problem);
     }
-    const fps = Math.round(Number(status.fps) || 0);
-    const text = {
-      ready: "Ready. In Zoom, Meet or Teams, choose Webcam Studio Camera. Your camera turns on only while a meeting uses it.",
-      running: `In use by a meeting app · ${fps} fps. Closing this window keeps it going.`,
-    }[state];
-    setInfo(text || status.message, state === "error");
   }
 
   // The meeting camera opens the real camera by name. Remember the last one the window
@@ -58,7 +61,7 @@ export function createMeetings({ card, action, info, login, previewLabel }) {
 
   async function refresh() {
     try {
-      status = await invoke("virtual_camera_status");
+      [status, on] = await Promise.all([invoke("virtual_camera_status"), invoke("meeting_camera_enabled")]);
     } catch (err) {
       status = { state: "error", message: String(err.message || err), fps: 0 };
     }
@@ -72,13 +75,10 @@ export function createMeetings({ card, action, info, login, previewLabel }) {
     render();
   }
 
-  async function onClick() {
-    if (busy || !status) {
-      return;
-    }
-    const state = status.state;
+  async function onSetup() {
+    if (busy || !status) return;
     try {
-      if (state === "needs_approval") {
+      if (status.state === "needs_approval") {
         await invoke("open_extension_settings");
       } else {
         installing = true;
@@ -86,37 +86,34 @@ export function createMeetings({ card, action, info, login, previewLabel }) {
       }
     } catch (err) {
       installing = false;
-      setInfo(String(err.message || err), true);
+      info.textContent = String(err.message || err);
+      info.classList.add("problem");
     }
     busy = "";
     await refresh();
   }
 
-  async function init() {
-    let available = false;
+  async function onToggle() {
+    on = toggle.checked;
+    render();
     try {
-      available = await invoke("meetings_available");
+      on = await invoke("set_meeting_camera_enabled", { enabled: on });
     } catch {
-      available = false;
+      on = !on;
     }
-    if (!available) {
-      return;
-    }
-    card.hidden = false;
-    action.addEventListener("click", onClick);
-    if (login) {
-      login.checked = await invoke("open_at_login").catch(() => false);
-      login.addEventListener("change", async () => {
-        try {
-          login.checked = await invoke("set_open_at_login", { enabled: login.checked });
-        } catch (err) {
-          login.checked = !login.checked;
-          setInfo(String(err.message || err), true);
-        }
-      });
-    }
+    await refresh();
+  }
+
+  async function init() {
+    const available = await invoke("meetings_available").catch(() => false);
+    if (!available) return;
+    section.hidden = false;
+    row.hidden = false;
+    action.addEventListener("click", onSetup);
+    toggle.addEventListener("change", onToggle);
     // macOS answers install requests later, and may answer twice (approval, then done).
     listen("camera-extension", refresh);
+    listen("meeting-camera-switched", refresh);
     document.addEventListener("visibilitychange", () => {
       clearInterval(timer);
       timer = 0;
@@ -130,4 +127,16 @@ export function createMeetings({ card, action, info, login, previewLabel }) {
   }
 
   return { init };
+}
+
+// "Open at login": a plain switch in Settings.
+export async function bindOpenAtLogin(input) {
+  input.checked = await invoke("open_at_login").catch(() => false);
+  input.addEventListener("change", async () => {
+    try {
+      input.checked = await invoke("set_open_at_login", { enabled: input.checked });
+    } catch {
+      input.checked = !input.checked;
+    }
+  });
 }
