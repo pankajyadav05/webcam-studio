@@ -1,4 +1,2 @@
-# Short, stable download links. Point them at the release files in the R2 bucket.
-# TODO: replace the target with the bucket URL, for example
-#   /download/mac https://<bucket-public-url>/Webcam-Studio_0.1.0_aarch64.dmg 302
-/download/mac https://github.com/pankajyadav05/webcam-studio 302
+# Short, stable download link. publish.sh keeps Webcam-Studio.dmg pointing at the newest release.
+/download/mac https://pub-e39e62d066fa40368708d6b84e4727b9.r2.dev/Webcam-Studio.dmg 302

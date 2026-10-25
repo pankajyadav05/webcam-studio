@@ -18,8 +18,10 @@ log() { printf '==> %s\n' "$*"; }
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "Not a release version: $version"
 security find-identity -v -p codesigning | grep -Fq "\"$SIGNING_IDENTITY\"" ||
   fail "Missing signing identity in the login keychain: $SIGNING_IDENTITY"
-xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 ||
+if ! notary_check=$(xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" 2>&1); then
+  echo "$notary_check" | tail -5 >&2
   fail "Cannot use the notarytool keychain profile '$NOTARY_PROFILE'"
+fi
 [[ -f "$PROVISIONING_PROFILE" ]] || fail "Missing provisioning profile: $PROVISIONING_PROFILE"
 [[ -d "$XCODE_DEVELOPER_DIR" ]] || fail "Missing Xcode: $XCODE_DEVELOPER_DIR"
 [[ -r "$UPDATER_KEY" ]] || fail "Missing updater key: $UPDATER_KEY"
