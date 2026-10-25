@@ -1,0 +1,7 @@
+// Cloudflare Workers static site for webcam.codifyit.dev. Deploy: npx wrangler deploy -c wrangler.site.jsonc
+{
+  "name": "webcam-studio-site",
+  "compatibility_date": "2026-10-25",
+  "assets": { "directory": "./site" },
+  "routes": [{ "pattern": "webcam.codifyit.dev", "custom_domain": true }]
+}

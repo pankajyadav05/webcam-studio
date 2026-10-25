@@ -1,0 +1,36 @@
+name: Website
+
+# Publishes webcam.codifyit.dev (a Cloudflare Workers static site) when site/ changes on
+# main. Runs on the owner's Mac, which keeps a Cloudflare login (npx wrangler login).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "wrangler.site.jsonc"
+      - ".github/workflows/site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, macOS, webcam-studio-mac]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+      - name: Deploy to Cloudflare
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 whoami >/dev/null 2>&1 || {
+            echo '::error::Cloudflare login expired on the build Mac. Run: npx wrangler login'
+            exit 1
+          }
+          npx --yes wrangler@4 deploy -c wrangler.site.jsonc

@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Webcam Studio for Mac: zoom, frame and change your background in every meeting</title>
+    <meta
+      name="description"
+      content="Webcam Studio lets you zoom in, frame yourself and blur or change your background with any Mac webcam. Choose Webcam Studio Camera in Zoom, Google Meet or Microsoft Teams. Free."
+    />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="canonical" href="https://webcam.codifyit.dev/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Webcam Studio for Mac" />
+    <meta property="og:description" content="Zoom in, frame yourself and change your background in every meeting app. Free." />
+    <meta property="og:url" content="https://webcam.codifyit.dev/" />
+    <meta property="og:image" content="https://webcam.codifyit.dev/img/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="/img/favicon.png" />
+    <link rel="apple-touch-icon" href="/img/icon.png" />
+    <link rel="preload" href="/fonts/urbanist-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/figtree-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/img/hero-1600.webp" as="image" type="image/webp" media="(min-width: 801px)" />
+    <link rel="stylesheet" href="/site.css" />
+    <script src="/site.js" defer></script>
+  </head>
+  <body>
+    <!--
+      THESIS: A webcam that macOS leaves plain becomes a studio camera. The page proves it on real
+      photos with the app's own backgrounds, and refuses the feature-card grid under a stock hero.
+      OWN-WORLD: Samsung.com product page: black hero, white and #f4f4f4 rounded 28px panels,
+      Urbanist 800 display at Samsung Sharp scale, Figtree body, black and white pill buttons,
+      round colour-style chips, small numbered footnotes. Orange #e7783f only in the mark and
+      live dots.
+      STORY: The visitor sees their own call look better, believes it works with their webcam and
+      stays private, and downloads it for Mac.
+      FIRST VIEWPORT: Sticky product bar with Download pill; centred "Your webcam. Studio ready."
+      at ~88px on black; Download for Mac pill; below, a 16:9 stage of a person on a call with
+      the background chips (Original, Blur, six presets) under it.
+      FORM: Samsung product page (owner-pinned brief), seed: none (pinned).
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+    -->
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="bar" id="top">
+      <div class="bar-inner">
+        <a class="brand" href="/" aria-label="Webcam Studio home">
+          <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M8 4H6a3 3 0 0 0-3 3v2m13-5h2a3 3 0 0 1 3 3v2M3 15v2a3 3 0 0 0 3 3h2m8 0h2a3 3 0 0 0 3-3v-2"/></g>
+            <path fill="#e7783f" fill-rule="evenodd" d="M17.5 12a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM13.6 10.1a1.6 1.6 0 1 0-3.2 0 1.6 1.6 0 0 0 3.2 0ZM9 15.3h6a3 3 0 0 0-6 0Z"/>
+          </svg>
+          <span>Webcam Studio</span>
+        </a>
+        <nav class="bar-nav" aria-label="Sections">
+          <a href="#framing">Framing</a>
+          <a href="#effects">Effects</a>
+          <a href="#meetings">Meetings</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#specs">Specs</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <a class="pill pill-dark pill-sm" href="/download/mac" data-download>Download</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- Hero -->
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <h1 id="hero-title">Your webcam.<br class="br-narrow" /> Studio ready.</h1>
+          <p class="hero-lede">Zoom in, frame yourself and change your background in every meeting app. Use the webcam that you have. Free.</p>
+          <div class="hero-actions">
+            <a class="pill pill-light" href="/download/mac" data-download>Download for Mac</a>
+            <a class="link link-light" href="#framing">See how it works</a>
+          </div>
+        </div>
+
+        <figure class="stage" data-stage>
+          <div class="stage-frame" data-bg="blur">
+            <img class="stage-room" src="/img/hero-1600.webp" srcset="/img/hero-800.webp 800w, /img/hero-1600.webp 1600w" sizes="(min-width: 1440px) 900px, 92vw" width="1600" height="900" alt="A woman on a video call, seen by her webcam, in a light office." fetchpriority="high" />
+            <img class="stage-blur" src="/img/hero-bg-1600.webp" srcset="/img/hero-bg-800.webp 800w, /img/hero-bg-1600.webp 1600w" sizes="(min-width: 1440px) 900px, 92vw" width="1600" height="900" alt="" />
+            <div class="stage-preset" aria-hidden="true"></div>
+            <img class="stage-person" src="/img/hero-cut-1600.webp" srcset="/img/hero-cut-800.webp 800w, /img/hero-cut-1600.webp 1600w" sizes="(min-width: 1440px) 900px, 92vw" width="1600" height="900" alt="" />
+            <span class="stage-tag"><i class="live" aria-hidden="true"></i>Webcam Studio Camera</span>
+            <span class="stage-note">Images simulated<sup><a href="#note-1" aria-label="Note 1">1</a></sup></span>
+          </div>
+          <figcaption class="chips-wrap">
+            <p class="chips-label">Background: <b data-bg-name>Blur</b></p>
+            <div class="chips" role="radiogroup" aria-label="Background">
+              <button class="chip chip-none" role="radio" aria-checked="false" data-bg="none" data-name="Original"><span class="sr">Original</span></button>
+              <button class="chip chip-blur" role="radio" aria-checked="true" data-bg="blur" data-name="Blur"><span class="sr">Blur</span></button>
+              <button class="chip" role="radio" aria-checked="false" data-bg="studio" data-name="Studio" style="--a:#41444c;--b:#17181b"><span class="sr">Studio</span></button>
+              <button class="chip" role="radio" aria-checked="false" data-bg="paper" data-name="Paper" style="--a:#f1ebe1;--b:#d6cdbf"><span class="sr">Paper</span></button>
+              <button class="chip" role="radio" aria-checked="false" data-bg="sage" data-name="Sage" style="--a:#93a99a;--b:#566b5f"><span class="sr">Sage</span></button>
+              <button class="chip" role="radio" aria-checked="false" data-bg="dusk" data-name="Dusk" style="--a:#3f6072;--b:#1b2933"><span class="sr">Dusk</span></button>
+              <button class="chip" role="radio" aria-checked="false" data-bg="sand" data-name="Sand" style="--a:#dcbd98;--b:#a98260"><span class="sr">Sand</span></button>
+              <button class="chip" role="radio" aria-checked="false" data-bg="slate" data-name="Slate" style="--a:#707684;--b:#333842"><span class="sr">Slate</span></button>
+            </div>
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- Statement -->
+      <section class="statement" aria-labelledby="gap-title">
+        <h2 id="gap-title">Zoom in and frame yourself. <span>On any external camera.</span></h2>
+        <p>Zoom on a Mac stops at the built-in camera. Webcam Studio brings it to the webcam on your desk.</p>
+      </section>
+
+      <!-- Framing -->
+      <section class="section section-dark section-after-statement" id="framing" aria-labelledby="frame-title">
+        <header class="section-head">
+          <h2 id="frame-title">Zoom in. Move the frame.<br />Sit in the center.</h2>
+          <p>Zoom in until you fill the picture. Drag the picture to put yourself in the center. Meeting apps get the picture exactly as you frame it.</p>
+        </header>
+        <div class="frame-demo" data-frame>
+          <div class="frame-view">
+            <img src="/img/frame-1600.webp" srcset="/img/frame-800.webp 800w, /img/frame-1600.webp 1600w" sizes="(min-width: 1440px) 1280px, 92vw" width="1600" height="900" alt="A man with glasses on a video call in an office." loading="lazy" />
+          </div>
+          <div class="frame-controls" role="group" aria-label="Try the framing">
+            <button class="round" type="button" data-zoom="-1" aria-label="Zoom out"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+            <output class="zoom-value" data-zoom-value aria-live="polite">1.0×</output>
+            <button class="round" type="button" data-zoom="1" aria-label="Zoom in"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
+            <button class="pill pill-ghost pill-sm" type="button" data-mirror aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M9 7 4 17h5zM15 7l5 10h-5z"/></svg>Mirror
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Effects: blur -->
+      <section class="section" id="effects" aria-labelledby="blur-title">
+        <header class="section-head">
+          <h2 id="blur-title">Keep your face sharp.<br />Make the room soft.</h2>
+          <p>Background blur hides the shelves, the boxes and the people behind you. Your face, hair and hands stay sharp.</p>
+        </header>
+        <div class="compare" data-compare style="--pos: 50%">
+          <img class="compare-img" src="/img/blur-1600.webp" srcset="/img/blur-800.webp 800w, /img/blur-1600.webp 1600w" sizes="(min-width: 1440px) 900px, 92vw" width="1600" height="900" alt="A woman on a video call in an office with shelves behind her." loading="lazy" />
+          <div class="compare-after">
+            <img class="compare-img" src="/img/blur-bg-1600.webp" srcset="/img/blur-bg-800.webp 800w, /img/blur-bg-1600.webp 1600w" sizes="(min-width: 1440px) 1280px, 92vw" width="1600" height="900" alt="" loading="lazy" />
+            <img class="compare-img" src="/img/blur-cut-1600.webp" srcset="/img/blur-cut-800.webp 800w, /img/blur-cut-1600.webp 1600w" sizes="(min-width: 1440px) 1280px, 92vw" width="1600" height="900" alt="" loading="lazy" />
+          </div>
+          <span class="compare-tag compare-tag-l">Without</span>
+          <span class="compare-tag compare-tag-r">With Webcam Studio</span>
+          <div class="compare-handle" aria-hidden="true"><span></span></div>
+          <input class="compare-range" type="range" min="0" max="100" value="50" aria-label="Move the line to compare without and with background blur" />
+        </div>
+      </section>
+
+      <!-- Effects: replace + cutout -->
+      <section class="section section-tight" aria-labelledby="replace-title">
+        <div class="bento">
+          <article class="panel panel-replace">
+            <div class="panel-copy">
+              <h3 id="replace-title">Put a new room behind you</h3>
+              <p>Choose one of six backgrounds, or use your own picture. The background stays behind you when you move.</p>
+            </div>
+            <div class="swatch-stage" aria-hidden="true">
+              <div class="swatch-bg" data-cycle></div>
+              <img src="/img/meet-cut-800.webp" width="800" height="450" alt="" loading="lazy" />
+            </div>
+          </article>
+          <article class="panel panel-cutout">
+            <div class="panel-copy">
+              <h3>Tune the edge</h3>
+              <p>Three controls change the cutout around you. Use them for hair, glasses and fast hands.</p>
+            </div>
+            <div class="tune-stage" aria-hidden="true">
+              <div class="tune-bg preset" style="--a:#707684;--b:#333842;--glow:rgba(255,255,255,0.18)"></div>
+              <img src="/img/meet3-cut-800.webp" width="800" height="450" alt="" loading="lazy" />
+            </div>
+            <div class="sliders" aria-hidden="true">
+              <div class="slider-row"><span>Edge</span><b>Tight</b><i style="--v: 62%"></i></div>
+              <div class="slider-row"><span>Softness</span><b>Soft</b><i style="--v: 40%"></i></div>
+              <div class="slider-row"><span>Steadiness</span><b>Steady</b><i style="--v: 74%"></i></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Meetings -->
+      <section class="section" id="meetings" aria-labelledby="meet-title">
+        <header class="section-head">
+          <h2 id="meet-title">One camera for every meeting app</h2>
+          <p>In Zoom, Google Meet, Microsoft Teams or another meeting app, choose <b>Webcam Studio Camera</b>. Do this one time. The app keeps your choice.</p>
+        </header>
+        <div class="call" aria-label="A video call with four people. One person uses Webcam Studio Camera." role="img">
+          <div class="tile tile-you">
+            <img src="/img/hero-bg-800.webp" width="800" height="450" alt="" loading="lazy" />
+            <img src="/img/hero-cut-800.webp" width="800" height="450" alt="" loading="lazy" />
+            <span class="tile-name">You · Webcam Studio Camera</span>
+          </div>
+          <div class="tile"><img src="/img/meet-800.webp" width="800" height="450" alt="" loading="lazy" /><span class="tile-name">Daniel</span></div>
+          <div class="tile"><img src="/img/meet2-800.webp" width="800" height="450" alt="" loading="lazy" /><span class="tile-name">Amara</span></div>
+          <div class="tile"><img src="/img/meet3-800.webp" width="800" height="450" alt="" loading="lazy" /><span class="tile-name">Tom</span></div>
+          <div class="call-bar" aria-hidden="true">
+            <i><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></i>
+            <i><svg viewBox="0 0 24 24"><path d="M3.5 8A2 2 0 0 1 5.5 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2zM15.5 10.5l5-3v9l-5-3"/></svg></i>
+            <i><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M12 14V8m-3 3 3-3 3 3M8 20h8"/></svg></i>
+            <i class="end"><svg viewBox="0 0 24 24"><path d="M3.5 14.5c4.7-4.3 12.3-4.3 17 0l-2.3 2.3-3-1.7v-2.4a11 11 0 0 0-6.4 0v2.4l-3 1.7z"/></svg></i>
+          </div>
+        </div>
+        <p class="note note-center">Names and call screen simulated.<sup><a href="#note-1">1</a></sup></p>
+      </section>
+
+      <!-- Menu bar -->
+      <section class="section section-mist" aria-labelledby="menu-title">
+        <div class="split">
+          <div class="split-copy">
+            <h2 id="menu-title">On when a meeting needs it.<br />Off when it does not.</h2>
+            <p>Close the window and Webcam Studio stays in the menu bar. Your camera turns on when a meeting app uses Webcam Studio Camera. It turns off about 2 seconds after the meeting app stops.</p>
+            <ul class="ticks">
+              <li>No window to keep open</li>
+              <li>The camera light shows only during calls</li>
+              <li>One switch turns the meeting camera on or off</li>
+            </ul>
+          </div>
+          <div class="menu-demo">
+            <div class="mac" data-mac>
+              <div class="mac-bar" aria-hidden="true">
+                <span class="mac-left">
+                  <svg class="apple" viewBox="0 0 24 24"><path d="M16.4 12.7c0-2.4 2-3.6 2.1-3.7a4.5 4.5 0 0 0-3.6-1.9c-1.5-.2-3 .9-3.7.9-.8 0-2-.9-3.2-.9a4.8 4.8 0 0 0-4 2.4c-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8s2.1-1.2 2.9-2.4a10 10 0 0 0 1.3-2.7 4.2 4.2 0 0 1-2.3-3.9ZM14 5.6a4.2 4.2 0 0 0 1-3.1 4.4 4.4 0 0 0-2.9 1.5 4.1 4.1 0 0 0-1 3 3.6 3.6 0 0 0 2.9-1.4Z"/></svg>
+                  <b>Finder</b><span class="hide-sm">File</span><span class="hide-sm">Edit</span><span class="hide-sm">View</span>
+                </span>
+                <span class="mac-right">
+                  <span class="mac-cam" title="Camera in use"><svg viewBox="0 0 24 24"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h7.5A2.5 2.5 0 0 1 16 8.5v7a2.5 2.5 0 0 1-2.5 2.5H6a2.5 2.5 0 0 1-2.5-2.5zM16 10.5l4.2-2.6a.6.6 0 0 1 .9.5v7.2a.6.6 0 0 1-.9.5L16 13.5"/></svg></span>
+                  <span class="mac-item is-open" data-mac-icon>
+                    <svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M8 4H6a3 3 0 0 0-3 3v2m13-5h2a3 3 0 0 1 3 3v2M3 15v2a3 3 0 0 0 3 3h2m8 0h2a3 3 0 0 0 3-3v-2"/></g><path fill="currentColor" fill-rule="evenodd" d="M17.5 12a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM13.6 10.1a1.6 1.6 0 1 0-3.2 0 1.6 1.6 0 0 0 3.2 0ZM9 15.3h6a3 3 0 0 0-6 0Z"/></svg>
+                  </span>
+                  <span class="mac-item hide-sm"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M3.5 9.5a12 12 0 0 1 17 0M6.5 12.7a7.6 7.6 0 0 1 11 0M9.5 15.8a3.4 3.4 0 0 1 5 0"/><circle cx="12" cy="19" r="1.3" fill="currentColor"/></svg></span>
+                  <span class="mac-item"><svg viewBox="0 0 28 24"><rect x="2" y="7" width="21" height="10" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="9" width="14" height="6" rx="1.5" fill="currentColor"/><path d="M24.5 10.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+                  <span class="mac-item hide-sm"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="6" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><rect x="3" y="13" width="18" height="6" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="16" r="1.6" fill="currentColor"/></svg></span>
+                  <span class="mac-clock"><span class="hide-sm">Sun 25 Oct&nbsp; </span>9:41</span>
+                </span>
+              </div>
+              <div class="tray" data-menu>
+                <div class="tray-head">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 3.5H6A2.5 2.5 0 0 0 3.5 6v2M16 3.5h2A2.5 2.5 0 0 1 20.5 6v2M3.5 16v2A2.5 2.5 0 0 0 6 20.5h2M16 20.5h2a2.5 2.5 0 0 0 2.5-2.5v-2"/></g><path fill="#e7783f" fill-rule="evenodd" d="M17.2 12a5.2 5.2 0 1 1-10.4 0 5.2 5.2 0 0 1 10.4 0ZM13.55 10.25a1.55 1.55 0 1 0-3.1 0 1.55 1.55 0 0 0 3.1 0ZM9.2 15.2h5.6a2.8 2.8 0 0 0-5.6 0Z"/></svg>
+                  <span>Webcam Studio</span>
+                </div>
+                <label class="tray-module">
+                  <span class="tray-tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h7.5A2.5 2.5 0 0 1 16 8.5v7a2.5 2.5 0 0 1-2.5 2.5H6a2.5 2.5 0 0 1-2.5-2.5zM16 10.5l4.2-2.6a.6.6 0 0 1 .9.5v7.2a.6.6 0 0 1-.9.5L16 13.5"/></svg></span>
+                  <span class="tray-text">
+                    <b>Meeting camera</b>
+                    <small><i class="tray-dot" aria-hidden="true"></i><span data-menu-status>In use · 30 fps</span></small>
+                  </span>
+                  <input class="tray-switch" type="checkbox" role="switch" checked data-menu-switch aria-label="Meeting camera" />
+                </label>
+                <ul class="tray-items" aria-hidden="true">
+                  <li>Open Webcam Studio</li>
+                  <li>Settings<kbd>⌘,</kbd></li>
+                  <li class="tray-sep"></li>
+                  <li>Quit Webcam Studio<kbd>⌘Q</kbd></li>
+                </ul>
+              </div>
+            </div>
+            <p class="note">Try the switch.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Privacy -->
+      <section class="section section-dark" id="privacy" aria-labelledby="privacy-title">
+        <header class="section-head">
+          <h2 id="privacy-title">Your picture stays on your Mac</h2>
+          <p>Webcam Studio finds you in the picture with Apple Vision, on your Mac. It sends no video to a server.</p>
+        </header>
+        <dl class="facts">
+          <div><dt>Made on your Mac</dt><dd>The cutout, the blur and the zoom run on your Mac. They work with no internet connection.</dd></div>
+          <div><dt>No account</dt><dd>There is no sign-in and no tracking. Open the app and use it.</dd></div>
+          <div><dt>Open source</dt><dd>The code is public under the GPL&#8209;3.0&#8209;or&#8209;later license. <a class="link link-light" href="https://github.com/pankajyadav05/webcam-studio">Read the code</a></dd></div>
+        </dl>
+      </section>
+
+      <!-- Setup -->
+      <section class="section" aria-labelledby="setup-title">
+        <header class="section-head">
+          <h2 id="setup-title">Ready in three steps</h2>
+          <p>You do these steps one time only.</p>
+        </header>
+        <ol class="steps">
+          <li>
+            <h3>Install</h3>
+            <p>Download Webcam Studio. Move it to the Applications folder, then open it.</p>
+          </li>
+          <li>
+            <h3>Allow the camera</h3>
+            <p>Click <b>Set up meeting camera</b>. System Settings opens. Turn on Webcam Studio under Camera Extensions.</p>
+          </li>
+          <li>
+            <h3>Choose it in your meeting</h3>
+            <p>In the video settings of your meeting app, choose <b>Webcam Studio Camera</b>.</p>
+          </li>
+        </ol>
+      </section>
+
+      <!-- Specs -->
+      <section class="section section-mist" id="specs" aria-labelledby="specs-title">
+        <header class="section-head">
+          <h2 id="specs-title">Specs</h2>
+        </header>
+        <dl class="specs">
+          <div><dt>System</dt><dd>macOS 14 Sonoma or later</dd></div>
+          <div><dt>Mac</dt><dd>Mac with Apple silicon</dd></div>
+          <div><dt>Camera</dt><dd>Built-in camera or a USB webcam that macOS can use</dd></div>
+          <div><dt>Meeting apps</dt><dd>Apps that let you choose a camera, for example Zoom, Google Meet and Microsoft Teams</dd></div>
+          <div><dt>Background</dt><dd>Original, blur, six backgrounds, or your own picture</dd></div>
+          <div><dt>Framing</dt><dd>Zoom, move and mirror</dd></div>
+          <div><dt>Cutout</dt><dd>Apple Vision person segmentation, on the device</dd></div>
+          <div><dt>Price</dt><dd>Free</dd></div>
+          <div><dt>License</dt><dd>GPL&#8209;3.0&#8209;or&#8209;later</dd></div>
+          <div><dt>Signature</dt><dd>Signed with Developer ID and notarized by Apple</dd></div>
+        </dl>
+      </section>
+
+      <!-- FAQ -->
+      <section class="section" id="faq" aria-labelledby="faq-title">
+        <header class="section-head">
+          <h2 id="faq-title">Questions</h2>
+        </header>
+        <div class="faq">
+          <details>
+            <summary>Why do I need to allow Webcam Studio in System Settings?</summary>
+            <p>Webcam Studio Camera is a camera extension. macOS asks you one time before a new camera can show in your apps. Webcam Studio opens the correct page in System Settings for you.</p>
+          </details>
+          <details>
+            <summary>Must Webcam Studio stay open during a meeting?</summary>
+            <p>No. Close the window and the app stays in the menu bar. When a meeting app uses Webcam Studio Camera, your camera turns on. When the meeting app stops, your camera turns off.</p>
+          </details>
+          <details>
+            <summary>How do I stop the meeting camera?</summary>
+            <p>Click the Webcam Studio icon in the menu bar and turn off <b>Meeting camera</b>. Meeting apps then show a placeholder picture. To quit the app, click <b>Quit</b>.</p>
+          </details>
+          <details>
+            <summary>Does Webcam Studio upload my video?</summary>
+            <p>No. Webcam Studio does all the work on your Mac. Webcam Studio has no account and sends no video to a server.</p>
+          </details>
+          <details>
+            <summary>Can Webcam Studio open when I log in?</summary>
+            <p>Yes. In Webcam Studio, open Settings and turn on <b>Open at login</b>. This setting is off at the start.</p>
+          </details>
+          <details>
+            <summary>Does it work on an Intel Mac?</summary>
+            <p>No. Webcam Studio needs a Mac with Apple silicon and macOS 14 or later.</p>
+          </details>
+        </div>
+      </section>
+
+      <!-- Close -->
+      <section class="closer" aria-labelledby="close-title">
+        <img class="closer-icon" src="/img/icon.png" width="96" height="96" alt="" loading="lazy" />
+        <h2 id="close-title">Look ready for your next call</h2>
+        <p>Free for Mac. Apple notarizes each release.</p>
+        <a class="pill pill-light" href="/download/mac" data-download>Download for Mac</a>
+      </section>
+
+      <section class="notes" aria-label="Notes">
+        <ol>
+          <li id="note-1">Images simulated for illustration. The people are stock photos by Vitaly Gariev on Unsplash. We use them under the Unsplash License. The backgrounds and the blur on this page come from Apple Vision person segmentation, the same model family that Webcam Studio uses. Results in the app change with your camera, your light and your room.</li>
+          <li>Zoom, Google Meet, Microsoft Teams, Apple, Mac, macOS and Apple Vision are trademarks of their owners. Webcam Studio is not connected with these companies.</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="foot-inner">
+        <a class="brand" href="/" aria-label="Webcam Studio home">
+          <img src="/img/icon.png" width="24" height="24" alt="" />
+          <span>Webcam Studio</span>
+        </a>
+        <nav aria-label="Footer">
+          <a href="https://github.com/pankajyadav05/webcam-studio">Source code</a>
+          <a href="https://github.com/pankajyadav05/webcam-studio/issues">Report a problem</a>
+          <a href="https://clippy.codifyit.dev/">Clippy</a>
+        </nav>
+        <p>© 2026 <a class="foot-org" href="https://codifyit.dev/" target="_blank" rel="noopener">CodifyIt<span class="sr"> (opens in a new tab)</span></a>. Free software under the GPL&#8209;3.0&#8209;or&#8209;later license.</p>
+      </div>
+    </footer>
+  </body>
+</html>

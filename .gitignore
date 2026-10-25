@@ -8,3 +8,8 @@ platform/macos/build/
 
 # Parked experimental model weights and runtimes (large; kept locally only)
 apps/desktop/dev/experimental/engine/vendor/
+
+# Impeccable review screenshots (local only)
+.impeccable/review/
+.wrangler/
+dist/

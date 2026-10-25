@@ -1,0 +1,4 @@
+# Short, stable download links. Point them at the release files in the R2 bucket.
+# TODO: replace the target with the bucket URL, for example
+#   /download/mac https://<bucket-public-url>/Webcam-Studio_0.1.0_aarch64.dmg 302
+/download/mac https://github.com/pankajyadav05/webcam-studio 302

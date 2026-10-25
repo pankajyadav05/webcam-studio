@@ -1,0 +1,407 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T10:24:47.175553+00:00",
+  "title": "Design System: Webcam Studio (landing page)",
+  "extensions": {
+    "scope": "site/ only (webcam.codifyit.dev). Not the desktop app UI in apps/desktop/ui.",
+    "copyStandard": "ASD-STE100 Simplified Technical English, ste:85",
+    "grammar": "Samsung.com product page (owner's explicit brief)",
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Ink Black",
+        "canonical": "#000000",
+        "tonalRamp": [
+          "#000000",
+          "#262626",
+          "#3d3d3d",
+          "#5c5c5c",
+          "#808080",
+          "#a6a6a6",
+          "#cccccc",
+          "#f2f2f2"
+        ]
+      },
+      "accent": {
+        "role": "secondary",
+        "displayName": "Mark Orange",
+        "canonical": "oklch(70% 0.15 50)",
+        "tonalRamp": [
+          "oklch(15% 0.15 50)",
+          "oklch(27% 0.15 50)",
+          "oklch(39% 0.15 50)",
+          "oklch(51% 0.15 50)",
+          "oklch(63% 0.15 50)",
+          "oklch(75% 0.15 50)",
+          "oklch(85% 0.15 50)",
+          "oklch(95% 0.15 50)"
+        ]
+      },
+      "live": {
+        "role": "secondary",
+        "displayName": "Live Green",
+        "canonical": "oklch(71% 0.17 152)",
+        "tonalRamp": [
+          "oklch(15% 0.15 152)",
+          "oklch(27% 0.15 152)",
+          "oklch(39% 0.15 152)",
+          "oklch(51% 0.15 152)",
+          "oklch(63% 0.15 152)",
+          "oklch(75% 0.15 152)",
+          "oklch(85% 0.15 152)",
+          "oklch(95% 0.15 152)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#141414",
+          "#262626",
+          "#3d3d3d",
+          "#5c5c5c",
+          "#808080",
+          "#a6a6a6",
+          "#cccccc",
+          "#ffffff"
+        ]
+      },
+      "mist": {
+        "role": "neutral",
+        "displayName": "Mist",
+        "canonical": "#f4f4f4",
+        "tonalRamp": [
+          "#141414",
+          "#262626",
+          "#3d3d3d",
+          "#5c5c5c",
+          "#808080",
+          "#a6a6a6",
+          "#cccccc",
+          "#f2f2f2"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Rule Grey",
+        "canonical": "#dddddd",
+        "tonalRamp": [
+          "#141414",
+          "#262626",
+          "#3d3d3d",
+          "#5c5c5c",
+          "#808080",
+          "#a6a6a6",
+          "#cccccc",
+          "#f2f2f2"
+        ]
+      },
+      "text-2": {
+        "role": "neutral",
+        "displayName": "Secondary Text",
+        "canonical": "#4d4d4d",
+        "tonalRamp": [
+          "#141414",
+          "#262626",
+          "#3d3d3d",
+          "#5c5c5c",
+          "#808080",
+          "#a6a6a6",
+          "#cccccc",
+          "#f2f2f2"
+        ]
+      },
+      "text-2-on-dark": {
+        "role": "neutral",
+        "displayName": "Secondary Text on Dark",
+        "canonical": "#b3b3b3",
+        "tonalRamp": [
+          "#141414",
+          "#262626",
+          "#3d3d3d",
+          "#5c5c5c",
+          "#808080",
+          "#a6a6a6",
+          "#cccccc",
+          "#f2f2f2"
+        ]
+      },
+      "hover-dark": {
+        "role": "neutral",
+        "displayName": "Dark Pill Hover",
+        "canonical": "#333333",
+        "tonalRamp": [
+          "#141414",
+          "#262626",
+          "#3d3d3d",
+          "#5c5c5c",
+          "#808080",
+          "#a6a6a6",
+          "#cccccc",
+          "#f2f2f2"
+        ]
+      },
+      "hover-light": {
+        "role": "neutral",
+        "displayName": "Light Pill Hover",
+        "canonical": "#e3e3e3",
+        "tonalRamp": [
+          "#141414",
+          "#262626",
+          "#3d3d3d",
+          "#5c5c5c",
+          "#808080",
+          "#a6a6a6",
+          "#cccccc",
+          "#f2f2f2"
+        ]
+      },
+      "device-graphite": {
+        "role": "neutral",
+        "displayName": "Device Graphite",
+        "canonical": "#1f1f1f",
+        "tonalRamp": [
+          "#141414",
+          "#262626",
+          "#3d3d3d",
+          "#5c5c5c",
+          "#808080",
+          "#a6a6a6",
+          "#cccccc",
+          "#f2f2f2"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero and closer headlines only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "One centred section head per band."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Bento panel heads, step titles, privacy facts."
+      },
+      "lede": {
+        "displayName": "Lede",
+        "purpose": "The single paragraph under a headline, secondary text."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "FAQ answers, specs, panel copy."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Pill button text."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Overlay tags on media, tile names, notes."
+      }
+    },
+    "shadows": [
+      {
+        "name": "control-card",
+        "value": "0 18px 40px -16px rgba(0,0,0,0.35)",
+        "purpose": "Slider card overlapping a demo image."
+      },
+      {
+        "name": "popover",
+        "value": "0 18px 50px -12px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(0,0,0,0.12)",
+        "purpose": "Simulated macOS menu-bar panel."
+      },
+      {
+        "name": "knob",
+        "value": "0 1px 4px rgba(0,0,0,0.3), 0 0 0 0.5px rgba(0,0,0,0.1)",
+        "purpose": "Slider and switch thumbs."
+      },
+      {
+        "name": "handle",
+        "value": "0 6px 24px rgba(0,0,0,0.25)",
+        "purpose": "Before-and-after compare handle."
+      }
+    ],
+    "materials": [
+      {
+        "name": "bar-glass",
+        "value": "rgba(255,255,255,0.86); backdrop-filter: saturate(180%) blur(18px)",
+        "purpose": "Sticky product bar."
+      },
+      {
+        "name": "tag-glass",
+        "value": "rgba(0,0,0,0.55); backdrop-filter: blur(10px)",
+        "purpose": "Overlay tags on media."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The only easing on the page."
+      },
+      {
+        "name": "state",
+        "value": "0.25s",
+        "purpose": "Pill, chip, switch and ring state changes."
+      },
+      {
+        "name": "swap",
+        "value": "0.5s-0.8s",
+        "purpose": "Background crossfades and zoom on the demos."
+      },
+      {
+        "name": "stage-in",
+        "value": "1.4s, from scale(0.9) + inset rounded clip + brightness(0.4)",
+        "purpose": "Single hero entrance; no-preference motion and JS only."
+      },
+      {
+        "name": "rise",
+        "value": "0.9s, translateY(18px), 80ms stagger",
+        "purpose": "Hero copy entrance."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "900px"
+      },
+      {
+        "name": "phone",
+        "value": "600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Dark Pill",
+      "kind": "button",
+      "refersTo": "button-dark",
+      "description": "Primary action on light bands and in the product bar.",
+      "html": "<a class=\"ds-pill ds-pill-dark\" href=\"#\">Download</a>",
+      "css": ":host{--ink:#000;--paper:#fff;--mist:#f4f4f4;--line:#ddd;--text-2:#4d4d4d;--text-2-on-dark:#b3b3b3;--accent:#e7783f;--live:#2fbf71;--ease-out:cubic-bezier(0.16,1,0.3,1);} .ds-pill{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 28px;border-radius:999px;border:1.5px solid transparent;font:700 16px/1 Figtree,'Helvetica Neue',sans-serif;letter-spacing:0.01em;text-decoration:none;cursor:pointer;transition:background-color .25s,color .25s,border-color .25s,transform .25s cubic-bezier(0.16,1,0.3,1);} .ds-pill:active{transform:scale(0.97);} .ds-pill:focus-visible{outline:2px solid #e7783f;outline-offset:3px;} .ds-pill-dark{background:#000;color:#fff;} .ds-pill-dark:hover{background:#333;}"
+    },
+    {
+      "name": "Light Pill",
+      "kind": "button",
+      "refersTo": "button-light",
+      "description": "Primary action on ink bands (hero, closer).",
+      "html": "<div style=\"background:#000;padding:24px\"><a class=\"ds-pill ds-pill-light\" href=\"#\">Download for Mac</a></div>",
+      "css": ":host{--ink:#000;--paper:#fff;--mist:#f4f4f4;--line:#ddd;--text-2:#4d4d4d;--text-2-on-dark:#b3b3b3;--accent:#e7783f;--live:#2fbf71;--ease-out:cubic-bezier(0.16,1,0.3,1);} .ds-pill{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 28px;border-radius:999px;border:1.5px solid transparent;font:700 16px/1 Figtree,'Helvetica Neue',sans-serif;letter-spacing:0.01em;text-decoration:none;cursor:pointer;transition:background-color .25s,color .25s,border-color .25s,transform .25s cubic-bezier(0.16,1,0.3,1);} .ds-pill:active{transform:scale(0.97);} .ds-pill:focus-visible{outline:2px solid #e7783f;outline-offset:3px;} .ds-pill-light{background:#fff;color:#000;} .ds-pill-light:hover{background:#e3e3e3;}"
+    },
+    {
+      "name": "Ghost Pill",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Toggle on ink bands; pressed state fills white.",
+      "html": "<div style=\"background:#000;padding:24px\"><button class=\"ds-pill ds-pill-ghost\" aria-pressed=\"false\">Mirror</button></div>",
+      "css": ":host{--ink:#000;--paper:#fff;--mist:#f4f4f4;--line:#ddd;--text-2:#4d4d4d;--text-2-on-dark:#b3b3b3;--accent:#e7783f;--live:#2fbf71;--ease-out:cubic-bezier(0.16,1,0.3,1);} .ds-pill{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 28px;border-radius:999px;border:1.5px solid transparent;font:700 16px/1 Figtree,'Helvetica Neue',sans-serif;letter-spacing:0.01em;text-decoration:none;cursor:pointer;transition:background-color .25s,color .25s,border-color .25s,transform .25s cubic-bezier(0.16,1,0.3,1);} .ds-pill:active{transform:scale(0.97);} .ds-pill:focus-visible{outline:2px solid #e7783f;outline-offset:3px;} .ds-pill-ghost{min-height:36px;padding:0 18px;font-size:14px;background:transparent;color:#fff;border-color:rgba(255,255,255,0.45);} .ds-pill-ghost:hover{border-color:#fff;} .ds-pill-ghost[aria-pressed=true]{background:#fff;color:#000;border-color:#fff;}"
+    },
+    {
+      "name": "Text Link",
+      "kind": "custom",
+      "refersTo": "link",
+      "description": "Secondary action beside a primary pill, with a drawn chevron.",
+      "html": "<a class=\"ds-link\" href=\"#\">See the effects</a>",
+      "css": ":host{--ink:#000;--paper:#fff;--mist:#f4f4f4;--line:#ddd;--text-2:#4d4d4d;--text-2-on-dark:#b3b3b3;--accent:#e7783f;--live:#2fbf71;--ease-out:cubic-bezier(0.16,1,0.3,1);} .ds-link{font:600 17px/1.55 Figtree,sans-serif;color:#000;text-decoration:underline;text-underline-offset:5px;text-decoration-thickness:1.5px;display:inline-flex;align-items:center;gap:6px;} .ds-link::after{content:'';width:7px;height:7px;border-right:1.8px solid currentColor;border-top:1.8px solid currentColor;transform:rotate(45deg);margin-left:2px;} .ds-link:hover{text-decoration-thickness:2.5px;} .ds-link:focus-visible{outline:2px solid #e7783f;outline-offset:3px;border-radius:6px;}"
+    },
+    {
+      "name": "Background Chips",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Radio group of round preset swatches; selected shows an outer white ring.",
+      "html": "<div class=\"ds-chips\" role=\"radiogroup\" aria-label=\"Background\"><button class=\"ds-chip\" role=\"radio\" aria-checked=\"true\" style=\"--a:#41444c;--b:#17181b\"></button><button class=\"ds-chip\" role=\"radio\" aria-checked=\"false\" style=\"--a:#f1ebe1;--b:#d6cdbf\"></button><button class=\"ds-chip\" role=\"radio\" aria-checked=\"false\" style=\"--a:#93a99a;--b:#566b5f\"></button><button class=\"ds-chip\" role=\"radio\" aria-checked=\"false\" style=\"--a:#3f6072;--b:#1b2933\"></button><button class=\"ds-chip\" role=\"radio\" aria-checked=\"false\" style=\"--a:#dcbd98;--b:#a98260\"></button><button class=\"ds-chip\" role=\"radio\" aria-checked=\"false\" style=\"--a:#707684;--b:#333842\"></button></div>",
+      "css": ":host{--ink:#000;--paper:#fff;--mist:#f4f4f4;--line:#ddd;--text-2:#4d4d4d;--text-2-on-dark:#b3b3b3;--accent:#e7783f;--live:#2fbf71;--ease-out:cubic-bezier(0.16,1,0.3,1);} .ds-chips{display:flex;gap:14px;padding:16px 24px;background:#000;border-radius:999px;width:max-content;} .ds-chip{width:36px;height:36px;padding:0;border:0;border-radius:50%;cursor:pointer;background:linear-gradient(135deg,var(--a),var(--b));box-shadow:inset 0 0 0 1px rgba(255,255,255,0.18);position:relative;transition:transform .25s cubic-bezier(0.16,1,0.3,1);} .ds-chip::after{content:'';position:absolute;inset:-6px;border-radius:50%;border:2px solid transparent;transition:border-color .25s;} .ds-chip:hover{transform:scale(1.08);} .ds-chip[aria-checked=true]::after{border-color:#fff;} .ds-chip:focus-visible{outline:2px solid #e7783f;outline-offset:3px;}"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Mist bento panel with title, copy and a 16:9 demo stage.",
+      "html": "<article class=\"ds-panel\"><div><h3>Put a new room behind you</h3><p>Choose one of six backgrounds, or use your own picture.</p></div><div class=\"ds-panel-stage\"></div></article>",
+      "css": ":host{--ink:#000;--paper:#fff;--mist:#f4f4f4;--line:#ddd;--text-2:#4d4d4d;--text-2-on-dark:#b3b3b3;--accent:#e7783f;--live:#2fbf71;--ease-out:cubic-bezier(0.16,1,0.3,1);} .ds-panel{background:#f4f4f4;border-radius:28px;padding:40px;display:flex;flex-direction:column;gap:32px;max-width:520px;} .ds-panel h3{margin:0;font:800 2rem/1.1 Urbanist,'Helvetica Neue',sans-serif;letter-spacing:-0.02em;} .ds-panel p{margin:12px 0 0;font:400 17px/1.55 Figtree,sans-serif;color:#4d4d4d;max-width:42ch;} .ds-panel-stage{aspect-ratio:16/9;border-radius:20px;background:radial-gradient(circle at 28% 22%,rgba(255,255,255,0.18) 0,transparent 60%),linear-gradient(135deg,#707684,#333842);}"
+    },
+    {
+      "name": "Media Frame with Overlay Tag",
+      "kind": "custom",
+      "refersTo": "media-frame",
+      "description": "16:9 rounded stage with a glass capsule tag and live dot.",
+      "html": "<div class=\"ds-frame\"><span class=\"ds-tag\"><i class=\"ds-live\"></i>Webcam Studio Camera</span></div>",
+      "css": ":host{--ink:#000;--paper:#fff;--mist:#f4f4f4;--line:#ddd;--text-2:#4d4d4d;--text-2-on-dark:#b3b3b3;--accent:#e7783f;--live:#2fbf71;--ease-out:cubic-bezier(0.16,1,0.3,1);} .ds-frame{position:relative;aspect-ratio:16/9;max-width:640px;border-radius:28px;overflow:hidden;background:linear-gradient(135deg,#3f6072,#1b2933);} .ds-tag{position:absolute;left:20px;top:20px;display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:rgba(0,0,0,0.55);color:#fff;font:600 13px/1 Figtree,sans-serif;backdrop-filter:blur(10px);} .ds-live{width:8px;height:8px;border-radius:50%;background:#2fbf71;box-shadow:0 0 0 3px rgba(47,191,113,0.25);}"
+    },
+    {
+      "name": "Product Bar",
+      "kind": "nav",
+      "refersTo": "product-bar",
+      "description": "Sticky translucent bar: brand, section links with current underline, Download pill.",
+      "html": "<header class=\"ds-bar\"><a class=\"ds-brand\" href=\"#\">Webcam Studio</a><nav class=\"ds-nav\"><a href=\"#\" aria-current=\"true\">Effects</a><a href=\"#\">Meetings</a><a href=\"#\">Privacy</a></nav><a class=\"ds-bar-pill\" href=\"#\">Download</a></header>",
+      "css": ":host{--ink:#000;--paper:#fff;--mist:#f4f4f4;--line:#ddd;--text-2:#4d4d4d;--text-2-on-dark:#b3b3b3;--accent:#e7783f;--live:#2fbf71;--ease-out:cubic-bezier(0.16,1,0.3,1);} .ds-bar{height:56px;display:flex;align-items:center;gap:24px;padding:0 24px;background:rgba(255,255,255,0.86);backdrop-filter:saturate(180%) blur(18px);border-bottom:1px solid rgba(0,0,0,0.08);} .ds-brand{font:800 19px/1 Urbanist,sans-serif;letter-spacing:-0.01em;color:#000;text-decoration:none;} .ds-nav{display:flex;gap:28px;margin-left:auto;} .ds-nav a{position:relative;padding:18px 0;font:500 15px/1 Figtree,sans-serif;color:#4d4d4d;text-decoration:none;} .ds-nav a:hover,.ds-nav a[aria-current=true]{color:#000;} .ds-nav a[aria-current=true]::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:#000;} .ds-bar-pill{display:inline-flex;align-items:center;min-height:36px;padding:0 18px;border-radius:999px;background:#000;color:#fff;font:700 14px/1 Figtree,sans-serif;text-decoration:none;} .ds-bar-pill:hover{background:#333;}"
+    },
+    {
+      "name": "Menu Switch",
+      "kind": "input",
+      "refersTo": "switch",
+      "description": "macOS-style capsule switch; green track when the meeting camera is on.",
+      "html": "<label class=\"ds-switch\"><input type=\"checkbox\" checked><span style=\"position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)\">Meeting camera</span></label>",
+      "css": ":host{--ink:#000;--paper:#fff;--mist:#f4f4f4;--line:#ddd;--text-2:#4d4d4d;--text-2-on-dark:#b3b3b3;--accent:#e7783f;--live:#2fbf71;--ease-out:cubic-bezier(0.16,1,0.3,1);} .ds-switch{position:relative;display:inline-block;width:38px;height:22px;} .ds-switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:1;} .ds-switch::before{content:'';position:absolute;inset:0;border-radius:999px;background:#d0d0d0;transition:background-color .25s;} .ds-switch::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);transition:transform .3s cubic-bezier(0.16,1,0.3,1);} .ds-switch:has(input:checked)::before{background:#2fbf71;} .ds-switch:has(input:checked)::after{transform:translateX(16px);} .ds-switch:has(input:focus-visible){outline:2px solid #e7783f;outline-offset:3px;border-radius:999px;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Product Page Stage",
+    "overview": "The page is a consumer-electronics product page, built in the Samsung.com grammar: a black hero with a very large, heavy, centred headline; a wide 16:9 media stage directly under it; then a long scroll of full-bleed bands that alternate black, white and light mist. Each band has one centred headline, one short lede, and one large rounded demonstration. The product is shown on real photos with the app's own backgrounds, not described in a grid of feature cards.\n\nDensity is low and the scale is big. Headlines carry the page; body text is quiet grey under them. Interaction is part of the proof: the hero chips change the background on the stage, a before-and-after line compares blur, zoom and mirror controls move the framing photo, and a menu-bar switch changes the camera status. Everything else is still. Colour lives almost only in the photographs and the six preset backgrounds; the chrome is black, white and grey.",
+    "keyCharacteristics": [
+      "Full-bleed bands in three tones (ink, paper, mist), each with a centred head and one demonstration.",
+      "Urbanist 800 display at very large sizes with tight negative tracking; Figtree for everything else.",
+      "Big rounded media frames (28px) and fully round pills and chips.",
+      "Black and white pill buttons; the light pill on dark bands, the dark pill on light bands.",
+      "Real interactive demos instead of icons and feature cards.",
+      "Small numbered footnotes for every simulated image and for trademark notes."
+    ],
+    "rules": [
+      {
+        "name": "The Monochrome Chrome Rule",
+        "body": "Page chrome is ink, paper, mist and greys. Colour on the page comes from photos and preset backgrounds. If a new element needs a hue to be noticed, give it scale or position instead.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Signals Rule",
+        "body": "Orange means the brand mark. Green means \"the camera is on\". Do not use either for decoration, headings or buttons.",
+        "section": "colors"
+      },
+      {
+        "name": "The Weight Carries It Rule",
+        "body": "Display headings are always weight 800 with negative tracking and `text-wrap: balance`. Never set a heading in the body face, and never set body copy in Urbanist.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Lede Rule",
+        "body": "Each section head is one headline plus at most one short paragraph. There is no label above the headline.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Band Rule",
+        "body": "Bands, panels and media frames never carry a shadow. Only depicted controls (cards, popovers, knobs) do.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep each band to one centred headline, at most one short lede, and one large demonstration.",
+      "**Do** prove features on the real photos with the app's own preset backgrounds, and footnote every simulated image.",
+      "**Do** use the light pill on ink bands and the dark pill on light bands; one primary pill per band, with at most one text link beside it.",
+      "**Do** use 28px corners on large containers (20px under 600px) and fully round shapes on all controls.",
+      "**Do** keep the preset colours identical to `apps/desktop/ui/lib/backgrounds.js`.",
+      "**Do** write all copy in ASD-STE100 (`ste:85`): short sentences, approved words, active voice."
+    ],
+    "donts": [
+      "**Don't** put a grid of icon feature cards under the hero; the demos replace it.",
+      "**Don't** add shadows to bands, panels or media frames (The Flat Band Rule).",
+      "**Don't** use orange or green as decoration, on buttons, or in headlines (The Two Signals Rule).",
+      "**Don't** put a small label or eyebrow line above a headline.",
+      "**Don't** claim features that PRODUCT.md lists under \"Do not claim\", and don't add testimonials, counts or prices.",
+      "**Don't** import the desktop app's tokens, components or styles into `site/`."
+    ]
+  }
+}
