@@ -89,6 +89,14 @@ impl ExtensionTracker {
         }
     }
 
+    /// Takes what macOS reported at launch, unless an install request already said more.
+    pub fn adopt(&self, phase: ExtensionPhase) {
+        let mut current = self.phase.lock().unwrap_or_else(PoisonError::into_inner);
+        if *current == ExtensionPhase::Idle {
+            *current = phase;
+        }
+    }
+
     /// Forgets an old failure when the person tries again.
     pub fn begin(&self) {
         self.set(ExtensionPhase::Idle);
@@ -250,6 +258,16 @@ mod tests {
         let tracker = ExtensionTracker::new();
         tracker.set(ExtensionPhase::Activated(Instant::now() - APPEAR_WITHIN));
         assert_eq!(tracker.phase(), ExtensionPhase::RebootPending);
+    }
+
+    #[test]
+    fn launch_news_does_not_override_a_request() {
+        let tracker = ExtensionTracker::new();
+        tracker.adopt(ExtensionPhase::RebootPending);
+        assert_eq!(tracker.phase(), ExtensionPhase::RebootPending);
+        tracker.apply(Update::NeedsApproval);
+        tracker.adopt(ExtensionPhase::RebootPending);
+        assert_eq!(tracker.phase(), ExtensionPhase::AwaitingApproval);
     }
 
     #[test]

@@ -21,6 +21,19 @@ Inspect the extracted 16, 32, 128 and 512 px assets at actual size. The macOS bu
 explicitly uses `icon.icns`; Tauri also uses that icon for the Dock during development.
 The About panel uses the 256 px PNG, independently of the smaller default window icon.
 
+Newer macOS system menus (such as the camera-in-use list in Control Center) read the icon
+from an asset catalog, not `icon.icns`, and show a blank tile without one. The bundle
+therefore also ships `icons/macos/Assets.car` (named by `CFBundleIconName` in
+`Info.plist`). After changing the icon, refresh the catalog from the extracted iconset:
+
+```sh
+cp /tmp/WebcamStudio.iconset/*.png apps/desktop/src-tauri/icons/macos/AppIcon.xcassets/AppIcon.appiconset/
+xcrun actool apps/desktop/src-tauri/icons/macos/AppIcon.xcassets --compile /tmp/WebcamStudio.car \
+  --platform macosx --minimum-deployment-target 14.0 --app-icon AppIcon \
+  --output-partial-info-plist /tmp/WebcamStudio.car/partial.plist
+cp /tmp/WebcamStudio.car/Assets.car apps/desktop/src-tauri/icons/macos/Assets.car
+```
+
 ## Window appearance verification
 
 `WEBCAM_STUDIO_APPEARANCE=light` or `dark` forces only this app process's appearance.

@@ -203,6 +203,14 @@ pub fn spawn(app: AppHandle) {
         .name("meeting-camera-watch".to_string())
         .spawn(move || {
             let mut decider = Decider::default();
+            // A camera missing at launch may be one macOS loads after a restart, or one
+            // still waiting for approval; say so at once instead of offering Set up.
+            if !crate::vcam::extension_installed() {
+                if let Some(phase) = crate::vcam::system_extension_phase() {
+                    log::info!("Camera extension at launch: {phase:?}");
+                    app.state::<AppState>().extension().adopt(phase);
+                }
+            }
 
             loop {
                 std::thread::sleep(POLL);

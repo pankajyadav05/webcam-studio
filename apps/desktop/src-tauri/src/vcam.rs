@@ -164,6 +164,56 @@ pub fn meeting_readers() -> Option<u32> {
     }
 }
 
+/// What macOS already knows about the camera extension, read once at launch so the window
+/// can say "restart your Mac" or "waiting for your approval" without a Set up click first.
+/// `None` when nothing useful is known (not installed, or not on macOS).
+pub fn system_extension_phase() -> Option<ExtensionPhase> {
+    #[cfg(target_os = "macos")]
+    {
+        let id = bundled_extension_id()?;
+        let output = std::process::Command::new("/usr/bin/systemextensionsctl")
+            .arg("list")
+            .output()
+            .ok()?;
+        phase_from_listing(&String::from_utf8_lossy(&output.stdout), &id)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// Reads `systemextensionsctl list` lines for extension `id`. Called only when the camera
+/// device is missing: an enabled extension without its camera is one macOS loads after a
+/// restart; one waiting for the user still needs approval.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn phase_from_listing(listing: &str, id: &str) -> Option<ExtensionPhase> {
+    let states: Vec<&str> = listing
+        .lines()
+        .filter(|line| line.split_whitespace().any(|word| word == id))
+        .filter_map(|line| Some(line.rsplit_once('[')?.1.trim_end().trim_end_matches(']')))
+        .collect();
+    if states.contains(&"activated enabled") {
+        Some(ExtensionPhase::RebootPending)
+    } else if states.iter().any(|s| s.contains("waiting for user")) {
+        Some(ExtensionPhase::AwaitingApproval)
+    } else {
+        None
+    }
+}
+
+/// The bundle id of the extension inside this app, from its folder name.
+#[cfg(target_os = "macos")]
+fn bundled_extension_id() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.parent()?.join("Library/SystemExtensions");
+    std::fs::read_dir(dir).ok()?.flatten().find_map(|entry| {
+        let path = entry.path();
+        (path.extension()? == "systemextension")
+            .then(|| path.file_stem()?.to_str().map(str::to_string))?
+    })
+}
+
 /// Whether the running app carries a camera extension that could be installed.
 ///
 /// A plain `cargo run` or an unsigned build has none, and then installing can never work, so
@@ -226,6 +276,34 @@ pub fn describe(error: &StudioError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const LISTING: &str = "1 extension(s)\n--- com.apple.system_extension.cmio\nenabled\tactive\tteamID\tbundleID (version)\tname\t[state]\n\t\t88LKBXATSW\tdev.example.CameraExtension (0.1.0/1)\tCamera\t[terminated waiting to uninstall on reboot]\n*\t*\t88LKBXATSW\tdev.example.CameraExtension (0.1.0/2)\tCamera\t[activated enabled]\n";
+
+    #[test]
+    fn an_enabled_extension_without_its_camera_needs_a_restart() {
+        assert_eq!(
+            phase_from_listing(LISTING, "dev.example.CameraExtension"),
+            Some(ExtensionPhase::RebootPending)
+        );
+    }
+
+    #[test]
+    fn a_waiting_extension_needs_approval_and_others_are_ignored() {
+        let waiting =
+            "*\t\tT\tdev.example.CameraExtension (0.1.0/2)\tCamera\t[activated waiting for user]\n";
+        assert_eq!(
+            phase_from_listing(waiting, "dev.example.CameraExtension"),
+            Some(ExtensionPhase::AwaitingApproval)
+        );
+        assert_eq!(
+            phase_from_listing(LISTING, "dev.other.CameraExtension"),
+            None
+        );
+        assert_eq!(
+            phase_from_listing("0 extension(s)\n", "dev.example.CameraExtension"),
+            None
+        );
+    }
 
     #[test]
     fn a_bundle_without_the_extension_cannot_offer_the_virtual_camera() {

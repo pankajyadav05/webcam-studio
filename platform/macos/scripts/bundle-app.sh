@@ -121,5 +121,10 @@ codesign --verify --strict --verbose=2 "${app}" >&2
 log "==> Writing ${out_zip}"
 rm -f "${out_zip}"
 ditto -c -k --keepParent "${app}" "${out_zip}"
+
+# Signing and stapling register this staging copy with Launch Services. Left registered,
+# macOS may take icons and names for the bundle id from it instead of the installed app.
+lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"${lsregister}" -u "${app}" 2>/dev/null || true
 log "==> Done"
 printf '%s\n' "${out_zip}"
