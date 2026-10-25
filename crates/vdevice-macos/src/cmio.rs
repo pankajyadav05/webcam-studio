@@ -20,7 +20,8 @@ use crate::{DEVICE_UUID, SINK_STREAM_NAME};
 
 /// Value of `kCMIOStreamPropertyDirection` for an input stream (a sink). Output streams
 /// report 0.
-const DIRECTION_INPUT: u32 = 1;
+/// Data flowing out of the computer into the device: the sink an app writes into.
+const DIRECTION_OUTPUT: u32 = 0;
 
 /// The message shown when the extension is missing.
 pub(crate) const NOT_INSTALLED: &str = "Webcam Studio Camera is not installed or not approved yet. Open the app's camera setup to install it.";
@@ -109,28 +110,42 @@ pub(crate) fn find_device() -> Option<CMIODeviceID> {
         })
 }
 
-/// Finds the input (sink) stream of our device.
+/// Finds the stream the app writes into (the extension's sink).
 ///
-/// CoreMediaIO does not show stream UUIDs, so the sink is the stream whose direction is
-/// "input". If that is ambiguous, the stream called [`SINK_STREAM_NAME`] wins.
+/// CoreMediaIO names directions from the computer's side: the camera picture meeting apps
+/// read is an *input* stream (1), and the sink an app writes into is an *output* stream (0).
+/// The stream called [`SINK_STREAM_NAME`] wins; otherwise the one output stream.
 pub(crate) fn find_sink_stream(device: CMIODeviceID) -> Option<CMIOStreamID> {
-    let streams = read_ids(device, kCMIODevicePropertyStreams);
-    let is_named_sink = |stream: CMIOStreamID| {
-        read_string(stream, kCMIOObjectPropertyName).is_some_and(|name| name == SINK_STREAM_NAME)
-    };
-    let inputs: Vec<CMIOStreamID> = streams
+    let streams: Vec<(CMIOStreamID, Option<String>, Option<u32>)> =
+        read_ids(device, kCMIODevicePropertyStreams)
+            .into_iter()
+            .map(|stream| {
+                (
+                    stream,
+                    read_string(stream, kCMIOObjectPropertyName),
+                    read_u32(stream, kCMIOStreamPropertyDirection),
+                )
+            })
+            .collect();
+    pick_sink(&streams)
+}
+
+/// The sink among `(stream, name, direction)` triples. See [`find_sink_stream`].
+fn pick_sink(streams: &[(CMIOStreamID, Option<String>, Option<u32>)]) -> Option<CMIOStreamID> {
+    if let Some((stream, ..)) = streams
         .iter()
-        .copied()
-        .filter(|&stream| read_u32(stream, kCMIOStreamPropertyDirection) == Some(DIRECTION_INPUT))
+        .find(|(_, name, _)| name.as_deref() == Some(SINK_STREAM_NAME))
+    {
+        return Some(*stream);
+    }
+    let outputs: Vec<CMIOStreamID> = streams
+        .iter()
+        .filter(|(_, _, direction)| *direction == Some(DIRECTION_OUTPUT))
+        .map(|(stream, ..)| *stream)
         .collect();
-    match inputs.as_slice() {
+    match outputs.as_slice() {
         [only] => Some(*only),
-        [] => streams.into_iter().find(|&stream| is_named_sink(stream)),
-        _ => inputs
-            .iter()
-            .copied()
-            .find(|&stream| is_named_sink(stream))
-            .or_else(|| inputs.first().copied()),
+        _ => None,
     }
 }
 
@@ -184,5 +199,31 @@ pub(crate) fn stop_stream(device: CMIODeviceID, stream: CMIOStreamID) -> Result<
         Err(StudioError::Backend(format!(
             "could not stop the camera's input stream (OSStatus {status})"
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SOURCE_NAME: &str = "Webcam Studio Camera";
+
+    #[test]
+    fn the_sink_is_found_by_its_name() {
+        let streams = [
+            (7, Some(SOURCE_NAME.to_string()), Some(1)),
+            (9, Some(SINK_STREAM_NAME.to_string()), Some(0)),
+        ];
+        assert_eq!(pick_sink(&streams), Some(9));
+    }
+
+    #[test]
+    fn without_names_the_output_stream_is_the_sink_never_the_camera_picture() {
+        let streams = [(7, None, Some(1)), (9, None, Some(0))];
+        assert_eq!(pick_sink(&streams), Some(9));
+        // Only the picture stream: there is nowhere to write.
+        assert_eq!(pick_sink(&[(7, None, Some(1))]), None);
+        // Two unnamed outputs are ambiguous.
+        assert_eq!(pick_sink(&[(7, None, Some(0)), (9, None, Some(0))]), None);
     }
 }
