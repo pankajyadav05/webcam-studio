@@ -130,6 +130,11 @@ impl AppState {
             return Err("Unknown background picture.".to_string());
         }
         let picture = decode_background(bytes)?;
+        log::info!(
+            "Replace picture from the window: {key}, {}x{}",
+            picture.width,
+            picture.height
+        );
         let mut loaded = self
             .replacement_path
             .lock()

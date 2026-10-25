@@ -6,6 +6,7 @@
 
 mod extension;
 mod image_load;
+mod logfile;
 mod pipeline;
 mod samples;
 mod segmentation;
@@ -148,6 +149,8 @@ fn open_extension_settings() -> Result<(), String> {
 }
 
 fn main() {
+    logfile::init();
+    log::info!("Webcam Studio {} started", env!("CARGO_PKG_VERSION"));
     tauri::Builder::default()
         .manage(AppState::new())
         .manage(segmentation::Segmentation::new())

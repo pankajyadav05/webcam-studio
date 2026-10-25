@@ -165,7 +165,9 @@ pub fn extension_bundled() -> bool {
     }
 }
 
-/// Looks for an extension bundle inside the `Contents` folder of an app.
+/// Looks for an extension bundle inside the `Contents` folder of an app. Only macOS
+/// builds look; the tests cover it everywhere.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn extension_bundled_in(contents: &std::path::Path) -> bool {
     std::fs::read_dir(contents.join("Library/SystemExtensions")).is_ok_and(|entries| {
         entries.flatten().any(|entry| {
