@@ -152,11 +152,17 @@ fn describe_error(error: &NSError) -> StudioError {
     } else {
         None
     };
-    let message = error.localizedDescription().to_string();
-    StudioError::Backend(match hint {
-        Some(hint) => format!("{message} {hint}"),
-        None => message,
-    })
+    StudioError::Backend(join_hint(&error.localizedDescription().to_string(), hint))
+}
+
+/// Puts the advice first, because it is what the person can act on, and keeps the system's
+/// own text after it. The system text has no full stop, so joining the two with a space
+/// made them read as one run-on sentence.
+fn join_hint(message: &str, hint: Option<&str>) -> String {
+    match hint {
+        Some(hint) => format!("{hint} ({})", message.trim_end_matches('.')),
+        None => message.to_owned(),
+    }
 }
 
 /// Creates the request on the main queue and sends it to macOS.
@@ -209,6 +215,24 @@ pub fn request_deactivation(on_done: Box<dyn Fn(Result<()>) + Send + Sync>) {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn hint_comes_first_and_the_system_text_is_kept_as_detail() {
+        let text = join_hint(
+            "Missing entitlement com.apple.developer.system-extension.install",
+            Some("This build of Webcam Studio is not signed to install camera extensions."),
+        );
+        assert_eq!(
+            text,
+            "This build of Webcam Studio is not signed to install camera extensions. \
+             (Missing entitlement com.apple.developer.system-extension.install)"
+        );
+    }
+
+    #[test]
+    fn without_a_hint_the_system_text_is_used_as_it_is() {
+        assert_eq!(join_hint("Something failed.", None), "Something failed.");
+    }
 
     #[test]
     fn callback_maps_results() {

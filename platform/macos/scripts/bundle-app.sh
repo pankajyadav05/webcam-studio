@@ -15,7 +15,7 @@
 #   TEAM_ID                Your team ID (ABCDE12345). Needed with SIGNING_IDENTITY. Falls back
 #                          to DEVELOPMENT_TEAM.
 #   PROVISIONING_PROFILE   Optional path to a Developer ID provisioning profile for the app.
-#                          It is copied to Contents/embedded.provisioningprofile. The
+#                          It is copied to Contents/embedded.provisionprofile. The
 #                          system-extension.install entitlement needs one.
 #   ADHOC_WITH_ENTITLEMENTS=1
 #                          For ad-hoc signing only: also attach the entitlements. This is
@@ -67,7 +67,7 @@ if [[ -n "${identity}" ]]; then
   if [[ -n "${profile}" ]]; then
     [[ -f "${profile}" ]] || die "provisioning profile not found: ${profile}"
     log "==> Embedding the provisioning profile"
-    cp "${profile}" "${app}/Contents/embedded.provisioningprofile"
+    cp "${profile}" "${app}/Contents/embedded.provisionprofile"
   else
     log "warning: no PROVISIONING_PROFILE. macOS may refuse the system-extension.install entitlement."
   fi
@@ -85,9 +85,17 @@ if [[ -n "${identity}" ]]; then
     done < <(find "${app}/Contents/Frameworks" -mindepth 1 -maxdepth 1 -print0)
   fi
 
+  # The profile only vouches for the restricted entitlement when the signature names the
+  # same app and team, so add those two identifiers to the app's entitlements.
+  app_signed_entitlements="${tmp}/WebcamStudio.entitlements"
+  cp "${app_entitlements}" "${app_signed_entitlements}"
+  app_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${app}/Contents/Info.plist")"
+  /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string ${team}.${app_id}" "${app_signed_entitlements}" >&2
+  /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string ${team}" "${app_signed_entitlements}" >&2
+
   log "==> Signing the app"
   codesign --force --options runtime --timestamp \
-    --entitlements "${app_entitlements}" \
+    --entitlements "${app_signed_entitlements}" \
     --sign "${identity}" "${app}"
 else
   log "==> No SIGNING_IDENTITY: ad-hoc signing for structure only."

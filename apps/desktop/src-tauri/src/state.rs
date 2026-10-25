@@ -9,7 +9,7 @@ use studio_core::settings::{BackgroundMode, Settings};
 use studio_engine::Engine;
 
 use crate::extension::ExtensionTracker;
-use crate::image_load::load_background;
+use crate::image_load::{decode_background, load_background};
 use crate::pipeline::Pipeline;
 use crate::vcam::{self, Facts, UNSUPPORTED_MESSAGE, VcamStatus};
 
@@ -21,6 +21,9 @@ pub struct PlatformInfo {
     /// Name of the virtual camera backend compiled into this build.
     pub camera_backend: String,
 }
+
+/// Replace backgrounds named like this come from the window, not from a file.
+pub const WINDOW_PICTURE: &str = "window:";
 
 /// State shared by all commands. Holds the engine behind a lock.
 pub struct AppState {
@@ -94,6 +97,8 @@ impl AppState {
                     new_picture = Some(None);
                     *loaded = None;
                 }
+                // The window sends its own picture separately; see set_window_picture.
+                Some(path) if path.starts_with(WINDOW_PICTURE) => {}
                 Some(path) => match load_background(path) {
                     Ok(frame) => {
                         new_picture = Some(Some(frame));
@@ -116,6 +121,22 @@ impl AppState {
             Some(message) => Err(message),
             None => Ok(applied),
         }
+    }
+
+    /// Uses a background the window drew (PNG or JPEG bytes) for Replace. `key` names it, and
+    /// must start with [`WINDOW_PICTURE`]; settings with that same key keep it in place.
+    pub fn set_window_picture(&self, key: &str, bytes: &[u8]) -> Result<(), String> {
+        if !key.starts_with(WINDOW_PICTURE) {
+            return Err("Unknown background picture.".to_string());
+        }
+        let picture = decode_background(bytes)?;
+        let mut loaded = self
+            .replacement_path
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        self.engine().set_replacement_image(Some(picture));
+        *loaded = Some(key.to_string());
+        Ok(())
     }
 
     /// Returns the operating system and camera backend names.
@@ -183,6 +204,52 @@ mod tests {
     fn starts_with_default_settings() {
         let state = AppState::new();
         assert_eq!(state.get_settings(), Settings::default());
+    }
+
+    fn png_bytes(w: u32, h: u32) -> Vec<u8> {
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::RgbImage::from_pixel(w, h, image::Rgb([10, 200, 30]))
+            .write_to(&mut out, image::ImageFormat::Png)
+            .unwrap();
+        out.into_inner()
+    }
+
+    #[test]
+    fn a_window_picture_survives_settings_that_name_it() {
+        let state = AppState::new();
+        state
+            .set_window_picture("window:forest", &png_bytes(64, 36))
+            .unwrap();
+        let replace = Settings {
+            background: BackgroundMode::Replace {
+                image_path: "window:forest".into(),
+            },
+            ..Settings::default()
+        };
+        state.set_settings(replace).unwrap();
+        assert_eq!(
+            *state.replacement_path.lock().unwrap(),
+            Some("window:forest".to_string())
+        );
+        // Turning Replace off drops it.
+        state.set_settings(Settings::default()).unwrap();
+        assert_eq!(*state.replacement_path.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn window_pictures_need_the_prefix_and_real_image_bytes() {
+        let state = AppState::new();
+        assert!(
+            state
+                .set_window_picture("/etc/passwd", &png_bytes(4, 4))
+                .is_err()
+        );
+        assert!(
+            state
+                .set_window_picture("window:x", b"not a picture")
+                .is_err()
+        );
+        assert_eq!(*state.replacement_path.lock().unwrap(), None);
     }
 
     #[test]

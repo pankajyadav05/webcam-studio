@@ -7,8 +7,11 @@
 mod extension;
 mod image_load;
 mod pipeline;
+mod samples;
+mod segmentation;
 mod state;
 mod vcam;
+mod window;
 
 use std::sync::Arc;
 
@@ -30,6 +33,24 @@ async fn set_settings(state: State<'_, AppState>, settings: Settings) -> Result<
     state.set_settings(settings)
 }
 
+/// The window's Replace background for the virtual camera. Body: PNG or JPEG bytes; the
+/// `key` header names the picture (it starts with "window:").
+#[tauri::command]
+fn set_window_picture(
+    state: State<'_, AppState>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("set_window_picture needs the picture bytes".into());
+    };
+    let key = request
+        .headers()
+        .get("key")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    state.set_window_picture(key, bytes)
+}
+
 #[tauri::command]
 fn platform_info(state: State<'_, AppState>) -> PlatformInfo {
     state.platform_info()
@@ -38,6 +59,33 @@ fn platform_info(state: State<'_, AppState>) -> PlatformInfo {
 #[tauri::command]
 async fn list_native_cameras(state: State<'_, AppState>) -> Result<Vec<CameraInfo>, String> {
     state.list_native_cameras()
+}
+
+/// Whether this app can offer the virtual camera at all: it needs a system that has one and
+/// an app that carries the extension. The window hides every virtual camera control otherwise.
+#[tauri::command]
+fn meetings_available() -> bool {
+    vcam::is_supported() && vcam::extension_bundled()
+}
+
+/// Opens the System Settings page where the camera or the microphone is allowed.
+#[tauri::command]
+fn open_privacy_settings(kind: String) -> Result<(), String> {
+    let url = vcam::privacy_settings_url(&kind)
+        .ok_or_else(|| format!("There is no privacy page called {kind}."))?;
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map(drop)
+            .map_err(|e| format!("Could not open System Settings: {e}"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = url;
+        Err("This system has no privacy page to open.".to_string())
+    }
 }
 
 #[tauri::command]
@@ -102,11 +150,25 @@ fn open_extension_settings() -> Result<(), String> {
 fn main() {
     tauri::Builder::default()
         .manage(AppState::new())
+        .manage(segmentation::Segmentation::new())
+        .manage(samples::Samples::default())
+        .setup(window::setup)
+        .on_window_event(window::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            window::window_chrome,
+            window::toggle_fullscreen,
+            samples::sample_manifest,
+            samples::sample_clip,
+            segmentation::segment_person,
+            segmentation::segmenter_info,
+            segmentation::segmentation_diagnostics,
             get_settings,
             set_settings,
             platform_info,
             list_native_cameras,
+            meetings_available,
+            set_window_picture,
+            open_privacy_settings,
             virtual_camera_status,
             start_virtual_camera,
             stop_virtual_camera,
@@ -118,7 +180,8 @@ fn main() {
         .expect("error while building Webcam Studio")
         .run(|app, event| {
             // Leave the virtual camera tidy: meeting apps then show the placeholder.
-            if let RunEvent::Exit = event {
+            if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
+                app.state::<window::WindowState>().save();
                 app.state::<AppState>().stop_virtual_camera();
             }
         });

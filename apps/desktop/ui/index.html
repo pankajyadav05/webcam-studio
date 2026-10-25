@@ -3,233 +3,259 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="color-scheme" content="light dark" />
     <title>Webcam Studio</title>
-    <link rel="preload" href="fonts/bricolage-grotesque-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">
-        <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
-          <path class="mark-brackets" d="M3 8V4h4M17 4h4v4M21 16v4h-4M7 20H3v-4" />
-          <circle class="mark-dot" cx="12" cy="12" r="3.6" />
-        </svg>
-        <h1>Webcam Studio</h1>
+    <div role="toolbar" class="titlebar" id="titlebar" data-tauri-drag-region="deep" aria-label="Window toolbar">
+      <div class="identity" data-tauri-drag-region>
+        <svg class="app-mark" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M8 4H6a3 3 0 0 0-3 3v2m13-5h2a3 3 0 0 1 3 3v2M3 15v2a3 3 0 0 0 3 3h2m8 0h2a3 3 0 0 0 3-3v-2"/></g><path fill="#e7783f" fill-rule="evenodd" d="M17.5 12a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM13.6 10.1a1.6 1.6 0 1 0-3.2 0 1.6 1.6 0 0 0 3.2 0ZM9 15.3h6a3 3 0 0 0-6 0Z"/></svg>
+        <span>Webcam Studio</span>
       </div>
-      <p class="topbar-note" id="preview-note">Preview shows framing only. Other effects are applied in the camera output.</p>
-    </header>
+      <div class="window-actions">
+        <button class="icon-btn" id="fullscreen" type="button" aria-label="Enter full screen" title="Enter full screen" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 4.5h-4v4m11-4h4v4m-15 7v4h4m11-4v4h-4"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="app">
+      <!-- The picture, with the controls you reach for most in one row under it. -->
+      <main class="stage" aria-label="Preview">
+        <div class="viewport" id="viewport">
+          <div class="frame" id="frame" tabindex="0" role="group"
+               aria-label="Camera preview. Drag to move the picture, scroll to zoom, double-click to reset.">
+            <canvas id="preview" width="1280" height="720"></canvas>
+            <video id="video" class="source" muted playsinline></video>
+            <div class="grid" id="grid" aria-hidden="true"></div>
 
-    <main class="layout">
-      <section class="stage" aria-label="Camera preview">
-        <div class="stage-area" id="stage-area">
-          <div class="viewfinder" id="viewfinder">
-            <canvas id="preview" aria-label="Live camera preview" role="img"></canvas>
-            <video id="video" class="source-video" autoplay muted playsinline aria-hidden="true" tabindex="-1"></video>
-
-            <div class="thirds" id="thirds" aria-hidden="true">
-              <i class="thirds-v1"></i><i class="thirds-v2"></i><i class="thirds-h1"></i><i class="thirds-h2"></i>
+            <div class="chips">
+              <span class="chip source-badge" id="source-badge" hidden>
+                <span id="source-badge-text"></span>
+                <button type="button" id="use-camera">Use camera</button>
+              </span>
+              <span class="chip" id="zoom-chip" hidden>1.0×</span>
+              <span class="chip busy" id="effect-chip" hidden>
+                <i class="spinner" aria-hidden="true"></i><span>Preparing background…</span>
+              </span>
             </div>
-            <span class="corner tl" aria-hidden="true"></span>
-            <span class="corner tr" aria-hidden="true"></span>
-            <span class="corner bl" aria-hidden="true"></span>
-            <span class="corner br" aria-hidden="true"></span>
-
-            <div class="tally" id="tally" data-live="false">
-              <span class="tally-dot" aria-hidden="true"></span>
-              <span class="tally-text" id="tally-text">Camera off</span>
+            <div class="chips end">
+              <span class="chip format" id="format-chip" hidden><i class="live-dot" aria-hidden="true"></i><span id="format-text"></span></span>
             </div>
-            <div class="zoom-readout" id="zoom-readout" aria-hidden="true">1.0×</div>
 
-            <p id="preview-message" class="preview-message" role="status" hidden></p>
+            <!-- Shown instead of the picture when there is no picture to show. -->
+            <div class="notice" id="notice" role="status">
+              <div class="notice-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h1.6a1 1 0 0 0 .8-.4l.9-1.2a1 1 0 0 1 .8-.4h3.8a1 1 0 0 1 .8.4l.9 1.2a1 1 0 0 0 .8.4H18a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 18 18H6a2.5 2.5 0 0 1-2.5-2.5z"/><circle cx="12" cy="12.5" r="3.2"/></svg>
+              </div>
+              <h2 id="notice-title">Opening your camera…</h2>
+              <p id="notice-text">Allow camera access when macOS asks. Your picture stays on this Mac.</p>
+              <div class="notice-actions">
+                <button class="btn primary" id="notice-primary" type="button" hidden>Open System Settings</button>
+                <button class="btn" id="notice-retry" type="button" hidden>Try again</button>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="stage-strip">
-          <button type="button" id="thirds-toggle" class="chip" aria-pressed="false">
-            <span class="chip-led" aria-hidden="true"></span>Thirds guides
+        <div class="dock" role="toolbar" aria-label="Camera and framing">
+          <div class="camera-pick">
+            <button class="tool camera-button" id="camera-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="camera-menu" title="Choose a camera">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h1.6a1 1 0 0 0 .8-.4l.9-1.2a1 1 0 0 1 .8-.4h3.8a1 1 0 0 1 .8.4l.9 1.2a1 1 0 0 0 .8.4H18a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 18 18H6a2.5 2.5 0 0 1-2.5-2.5z"/><circle cx="12" cy="12.5" r="3.2"/></svg>
+              <span id="camera-button-text">Camera</span>
+              <svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="menu" id="camera-menu" role="menu" aria-label="Cameras" hidden></div>
+          </div>
+          <span class="divider" aria-hidden="true"></span>
+          <div class="zoom">
+            <button class="icon-btn" id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out (−)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg>
+            </button>
+            <input id="zoom" class="slider" type="range" min="1" max="4" step="0.01" value="1" aria-label="Zoom" />
+            <button class="icon-btn" id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in (+)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg>
+            </button>
+            <output class="readout" id="zoom-readout" for="zoom">1.0×</output>
+          </div>
+          <span class="divider" aria-hidden="true"></span>
+          <button class="tool" id="mirror" type="button" aria-label="Mirror" aria-pressed="false" title="Flip the picture left to right (M)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16"/><path d="M8.5 7.5 3.5 18h5zM15.5 7.5l5 10.5h-5z"/></svg>
+            <span>Mirror</span>
           </button>
-          <p class="stage-spec mono" id="output-spec">1280 × 720 · 30 fps</p>
+          <button class="tool" id="grid-toggle" type="button" aria-label="Grid" aria-pressed="false" title="Show thirds guides (G)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16"/></svg>
+            <span>Grid</span>
+          </button>
+          <button class="tool" id="reset" type="button" aria-label="Reset" title="Back to the full picture (0)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4.5 4.5v4h4"/></svg>
+            <span>Reset</span>
+          </button>
         </div>
-      </section>
+      </main>
 
-      <aside class="rail" aria-label="Settings">
-        <section class="group vcam" id="vcam-group" aria-labelledby="g-vcam" data-state="unsupported">
-          <h2 id="g-vcam">Virtual camera</h2>
+      <!-- Settings. The first page holds only Background; everything else is one step in. -->
+      <aside class="panel" id="panel" aria-label="Settings">
 
-          <button type="button" id="vcam-toggle" class="btn btn-primary btn-block" aria-pressed="false" disabled>Start virtual camera</button>
-          <p class="vcam-camera" id="vcam-camera" hidden>
-            <span class="vcam-camera-key">Camera</span>
-            <span class="vcam-camera-name" id="vcam-camera-name"></span>
-          </p>
-          <p class="vcam-line" id="vcam-line" role="status"></p>
+        <section class="page" data-page="root" aria-label="Studio">
+          <h2 class="section-title" id="h-background">Background</h2>
+          <div class="group padded" role="group" aria-labelledby="h-background">
+            <div class="segmented" id="background-mode" role="radiogroup" aria-label="Background">
+              <label><input type="radio" name="background" value="none" checked /><span>None</span></label>
+              <label><input type="radio" name="background" value="blur" /><span>Blur</span></label>
+              <label><input type="radio" name="background" value="replace" /><span>Replace</span></label>
+            </div>
 
-          <div class="setup" id="vcam-setup" hidden>
-            <p class="setup-title">Set up the camera</p>
-            <ol class="steps">
-              <li class="step" id="step-install">
-                <button type="button" id="vcam-install" class="btn btn-step">1. Install the camera</button>
-              </li>
-              <li class="step" id="step-allow">
-                <button type="button" id="vcam-allow" class="btn btn-step">2. Allow it in System Settings</button>
-              </li>
-            </ol>
-            <p class="field-hint setup-note">Needs a signed build. See docs/macos.md.</p>
+            <div class="field" id="blur-field" hidden>
+              <div class="field-head"><label for="blur">Strength</label><output class="readout" id="blur-readout" for="blur">12</output></div>
+              <input id="blur" class="slider" type="range" min="1" max="50" step="1" value="12" />
+            </div>
+
+            <div class="field" id="replace-field" hidden>
+              <div class="swatches" id="swatches" role="radiogroup" aria-label="Background picture"></div>
+              <input id="image-file" type="file" accept="image/*" hidden />
+            </div>
+
+            <p class="problem" id="effect-problem" hidden role="alert"></p>
+          </div>
+
+          <h2 class="section-title">Settings</h2>
+          <div class="group">
+            <button class="row" type="button" data-go="mic">
+              <span class="row-icon" style="--tint:#e5645c" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span>
+              <span class="row-text"><b>Microphone</b><small id="mic-summary">Waiting for the microphone</small></span>
+              <span class="mini-meter" aria-hidden="true"><i id="mini-meter-bar"></i></span>
+              <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+            <button class="row" type="button" data-go="samples">
+              <span class="row-icon" style="--tint:#3fa66b" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M10.5 9.5v5l4-2.5z"/></svg></span>
+              <span class="row-text"><b>Sample videos</b><small id="source-summary">Off · showing your camera</small></span>
+              <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+            <button class="row" type="button" data-go="advanced" id="advanced-row">
+              <span class="row-icon" style="--tint:#7d7f88" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 7h9M18 7h1M5 17h3M12 17h7"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span>
+              <span class="row-text"><b>Advanced</b><small id="advanced-summary">Cutout: default</small></span>
+              <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+          </div>
+
+          <!-- Only appears in a build that can really offer a virtual camera. -->
+          <div class="group padded meetings" id="meetings" hidden>
+            <h3 id="h-meetings">Use in meetings</h3>
+            <button class="btn primary wide" id="meetings-action" type="button">Set up</button>
+            <p class="hint" id="meetings-info"></p>
           </div>
         </section>
 
-        <section class="group" aria-labelledby="g-camera">
-          <h2 id="g-camera">Camera</h2>
-
-          <div class="field">
-            <div class="field-head">
-              <span class="field-label" id="map-label">Framing map</span>
-              <span class="field-hint">Drag to pan, scroll to zoom</span>
+        <section class="page" data-page="camera" aria-labelledby="h-camera" hidden>
+          <button class="back" type="button" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Studio</button>
+          <h1 class="page-title" id="h-camera" tabindex="-1">Camera</h1>
+          <div class="group padded">
+            <div class="select-wrap">
+              <select id="camera" aria-label="Camera" aria-describedby="camera-info" disabled><option>Opening camera…</option></select>
             </div>
-            <div class="map-wrap" id="map-wrap">
-              <div
-                class="map"
-                id="map"
-                tabindex="0"
-                role="application"
-                aria-labelledby="map-label"
-                aria-describedby="map-help"
-              >
-                <canvas id="map-canvas"></canvas>
-                <div class="map-rect" id="map-rect"></div>
-              </div>
-            </div>
-            <p class="map-readout mono" id="map-readout">Full frame</p>
-            <p class="sr-only" id="map-help">
-              Use the arrow keys to move the crop. Use plus and minus to change the zoom.
-            </p>
+            <p class="hint" id="camera-info">Waiting for the camera</p>
           </div>
+          <p class="footnote">Webcam Studio uses the best picture your camera offers.</p>
+        </section>
 
-          <div class="field">
-            <label class="field-label" for="camera">Source</label>
-            <div class="select">
-              <select id="camera"></select>
+        <section class="page" data-page="mic" aria-labelledby="h-mic" hidden>
+          <button class="back" type="button" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Studio</button>
+          <h1 class="page-title" id="h-mic" tabindex="-1">Microphone</h1>
+          <div class="group padded">
+            <div class="select-wrap">
+              <select id="mic" aria-label="Microphone" aria-describedby="mic-info" disabled><option>Waiting for camera…</option></select>
             </div>
+            <div class="meter" id="meter" role="meter" aria-label="Microphone level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60">
+              <i id="meter-bar"></i><b id="meter-peak"></b>
+            </div>
+            <p class="hint" id="mic-info">Waiting for the microphone</p>
+            <button class="btn" id="mic-fix" type="button" hidden>Open System Settings</button>
           </div>
-
-          <div class="fader" data-default="1" data-ticks="1:1×,2:2×,3:3×,4:4×" data-minor="0.5" title="Double-click to reset">
-            <div class="fader-head">
-              <label for="zoom">Zoom</label>
-              <output id="zoom-out" for="zoom" class="mono">1.0×</output>
-            </div>
-            <div class="fader-body">
-              <input id="zoom" type="range" min="1" max="4" step="0.05" value="1" data-origin="min" />
-              <div class="ticks" aria-hidden="true"></div>
-            </div>
-          </div>
-
-          <div class="fader" data-default="0" data-ticks="-1:Left,0:Centre,1:Right" data-minor="0.25" title="Double-click to reset">
-            <div class="fader-head">
-              <label for="pan-x">Pan left to right</label>
-              <output id="pan-x-out" for="pan-x" class="mono">0.00</output>
-            </div>
-            <div class="fader-body">
-              <input id="pan-x" type="range" min="-1" max="1" step="0.05" value="0" data-origin="center" />
-              <div class="ticks" aria-hidden="true"></div>
-            </div>
-          </div>
-
-          <div class="fader" data-default="0" data-ticks="-1:Up,0:Centre,1:Down" data-minor="0.25" title="Double-click to reset">
-            <div class="fader-head">
-              <label for="pan-y">Pan up to down</label>
-              <output id="pan-y-out" for="pan-y" class="mono">0.00</output>
-            </div>
-            <div class="fader-body">
-              <input id="pan-y" type="range" min="-1" max="1" step="0.05" value="0" data-origin="center" />
-              <div class="ticks" aria-hidden="true"></div>
-            </div>
-          </div>
-
-          <div class="switches">
-            <label class="switch">
-              <input id="mirror" type="checkbox" role="switch" />
-              <span class="switch-text">Mirror</span>
-              <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
-            </label>
-            <label class="switch is-disabled">
-              <input id="auto-frame" type="checkbox" role="switch" disabled />
-              <span class="switch-text">Auto-frame <em class="soon">Coming soon</em></span>
-              <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+          <div class="group">
+            <label class="row static">
+              <span class="row-text"><b>Reduce background noise</b><small>Fans, typing and traffic</small></span>
+              <input class="switch" id="noise" type="checkbox" role="switch" checked disabled />
             </label>
           </div>
         </section>
 
-        <section class="group" aria-labelledby="g-background">
-          <h2 id="g-background">Background</h2>
-          <div class="seg seg-3" id="background-mode" role="radiogroup" aria-labelledby="g-background">
-            <span class="seg-thumb" aria-hidden="true"></span>
-            <label class="seg-opt"><input type="radio" name="background-mode" value="none" /><span>None</span></label>
-            <label class="seg-opt"><input type="radio" name="background-mode" value="blur" /><span>Blur</span></label>
-            <label class="seg-opt"><input type="radio" name="background-mode" value="replace" /><span>Replace</span></label>
-          </div>
-
-          <div class="reveal" id="blur-field">
-            <div class="reveal-inner">
-              <div class="fader" data-default="8" data-ticks="1:1,10:10,25:25,50:50" data-minor="" title="Double-click to reset">
-                <div class="fader-head">
-                  <label for="blur-radius">Blur radius</label>
-                  <output id="blur-out" for="blur-radius" class="mono">8 px</output>
-                </div>
-                <div class="fader-body">
-                  <input id="blur-radius" type="range" min="1" max="50" step="1" value="8" data-origin="min" />
-                  <div class="ticks" aria-hidden="true"></div>
-                </div>
-              </div>
+        <section class="page" data-page="samples" aria-labelledby="h-samples" hidden>
+          <button class="back" type="button" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Studio</button>
+          <h1 class="page-title" id="h-samples" tabindex="-1">Sample videos</h1>
+          <p class="footnote lead">Try backgrounds and Advanced settings on a looping clip, instead of moving in front of the camera.</p>
+          <div class="group" role="radiogroup" aria-label="Show in the preview">
+            <button class="row" type="button" role="radio" data-source="camera" aria-checked="true">
+              <span class="radio" aria-hidden="true"></span>
+              <span class="row-text"><b>Your camera</b><small>Live</small></span>
+            </button>
+            <button class="row" type="button" role="radio" data-source="clip" aria-checked="false">
+              <span class="radio" aria-hidden="true"></span>
+              <span class="row-text"><b>My clip</b><small id="clip-summary">Record 5 seconds of yourself · stays on this Mac</small></span>
+            </button>
+            <div class="row static clip-tools" id="clip-options" hidden>
+              <button class="btn" id="record-clip" type="button">Record 5 seconds</button>
+              <progress id="record-progress" max="5" value="0" aria-label="Recording progress" hidden></progress>
+              <span class="hint" id="record-hint" role="status">Picture only, no sound · kept in memory until you quit</span>
             </div>
           </div>
-
-          <div class="reveal" id="image-field">
-            <div class="reveal-inner">
-              <div class="field">
-                <label class="field-label" for="image-path">Image path</label>
-                <input id="image-path" class="text" type="text" placeholder="/path/to/background.jpg" spellcheck="false" autocomplete="off" />
-              </div>
-            </div>
+          <h2 class="section-title">From Webcam Studio</h2>
+          <div class="group" id="sample-list" role="radiogroup" aria-label="Sample clips">
+            <div class="row static"><span class="hint">Loading samples…</span></div>
           </div>
+          <div class="source-error" id="source-error" hidden>
+            <p class="problem" id="source-problem" role="alert"></p>
+            <button class="text-btn" id="source-retry" type="button">Try again</button>
+          </div>
+          <p class="footnote">Clips download once, when you pick one. Nothing from your camera is uploaded.</p>
         </section>
 
-        <section class="group" aria-labelledby="g-mic">
-          <h2 id="g-mic">Microphone</h2>
-          <div class="field">
-            <span class="field-label" id="noise-label">Noise removal</span>
-            <div class="seg seg-3" id="noise" role="radiogroup" aria-labelledby="noise-label">
-              <span class="seg-thumb" aria-hidden="true"></span>
-              <label class="seg-opt"><input type="radio" name="noise" value="off" /><span>Off</span></label>
-              <label class="seg-opt"><input type="radio" name="noise" value="light" /><span>Light</span></label>
-              <label class="seg-opt"><input type="radio" name="noise" value="strong" /><span>Strong</span></label>
+        <section class="page" data-page="advanced" aria-labelledby="h-advanced" hidden>
+          <button class="back" type="button" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Studio</button>
+          <h1 class="page-title" id="h-advanced" tabindex="-1">Advanced</h1>
+          <div class="group">
+            <button class="row" type="button" data-go="samples">
+              <span class="row-text"><b>Preview on</b><small id="preview-on">Your camera</small></span>
+              <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+            <label class="row static">
+              <span class="row-text"><b>Show mask</b><small id="mask-hint">White is kept, black is removed</small></span>
+              <input id="show-mask" class="switch" type="checkbox" role="switch" aria-describedby="mask-hint" />
+            </label>
+          </div>
+
+          <h2 class="section-title">Cutout</h2>
+          <div class="group">
+            <div class="field row-field">
+              <label for="cutoff">Cut uncertain areas</label>
+              <input id="cutoff" class="slider" type="range" min="0" max="100" step="1" value="50" aria-describedby="cutoff-hint" />
+              <div class="range-ends" id="cutoff-hint"><span>Keep more</span><span>Remove more</span></div>
+            </div>
+            <div class="field row-field">
+              <label for="softness">Edge softness</label>
+              <input id="softness" class="slider" type="range" min="0" max="100" step="1" value="50" aria-describedby="softness-hint" />
+              <div class="range-ends" id="softness-hint"><span>Crisp</span><span>Soft</span></div>
+            </div>
+            <div class="field row-field">
+              <label for="steadiness">Steadiness</label>
+              <input id="steadiness" class="slider" type="range" min="0" max="100" step="1" value="50" aria-describedby="steadiness-hint" />
+              <div class="range-ends" id="steadiness-hint"><span>Quick</span><span>Steady</span></div>
             </div>
           </div>
 
-          <div class="mic">
-            <div class="mic-row">
-              <button type="button" id="mic-toggle" class="btn" aria-pressed="false">Test microphone</button>
-              <output id="mic-db" class="mono mic-db" for="mic-toggle">Off</output>
+          <h2 class="section-title" id="quality-label">Quality</h2>
+          <div class="group padded">
+            <div class="segmented" id="quality" role="radiogroup" aria-labelledby="quality-label" aria-describedby="quality-hint">
+              <label><input type="radio" name="quality" value="balanced" checked /><span>Balanced</span></label>
+              <label><input type="radio" name="quality" value="accurate" /><span>Accurate</span></label>
             </div>
-            <div class="meter" id="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" data-lit="0" data-peak="0"></div>
-            <p class="field-hint mic-status" id="mic-status" role="status">Level check only. Nothing is recorded.</p>
           </div>
+          <p class="footnote" id="quality-hint">Accurate follows hair and hands more closely, but uses more power.</p>
+          <button id="reset-tuning" class="text-btn" type="button">Reset to defaults</button>
         </section>
-
-        <p id="error" class="error" role="alert" hidden></p>
       </aside>
-    </main>
+    </div>
 
-    <footer class="statusbar">
-      <p class="status-info" id="platform">
-        <span class="status-item"><span class="status-key">System</span> <span class="mono" id="platform-os">Reading…</span></span>
-        <span class="status-sep" aria-hidden="true"></span>
-        <span class="status-item"><span class="status-key">Camera backend</span> <span class="mono" id="platform-backend">…</span></span>
-      </p>
-      <p class="pill" id="vcam-status" data-state="unknown"><span class="pill-dot" aria-hidden="true"></span><span id="vcam-status-text">Virtual camera: checking…</span></p>
-    </footer>
-
-    <script src="main.js"></script>
+    <script type="module" src="main.js"></script>
   </body>
 </html>
