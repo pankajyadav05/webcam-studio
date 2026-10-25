@@ -110,6 +110,7 @@ body {
 .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Menu rows, as in a native menu. */
+.items .update { font-weight: 600; }
 .items { display: grid; padding: 0; }
 .items button {
   display: flex;

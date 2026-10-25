@@ -939,7 +939,8 @@ html[data-keyboard-focus] summary:focus-visible, html[data-keyboard-focus] .text
 .meetings .hint { overflow-wrap: anywhere; }
 .meeting-dot { flex: none; margin-right: 2px; }
 .row-field.setup { border-top: 1px solid var(--line); padding: 10px 12px; }
-#meetings-info { white-space: normal; overflow: visible; text-overflow: clip; }
+#meetings-info, #update-info { white-space: normal; overflow: visible; text-overflow: clip; }
+#update-info.warn { color: var(--warn, #e0a33a); }
 #meetings-info.warn, #meeting-summary.warn { color: var(--warn, #e0a33a); }
 #meetings-info.warn::before, #meeting-summary.warn::before { content: "⚠︎ "; }
 

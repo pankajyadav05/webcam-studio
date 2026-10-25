@@ -63,5 +63,13 @@
     "resources": {
       "icons/source/Credits.html": "Credits.html"
     }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://pub-e39e62d066fa40368708d6b84e4727b9.r2.dev/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDA0QzI0NzQ3N0RDOUY2MDAKUldRQTlzbDlSMGZDQkVPWGRIYldlcDNxZU1PRkppVkQ4Um1uc1FuK3JFNmFhYmJzbnovdm5xRmYK"
+    }
   }
 }

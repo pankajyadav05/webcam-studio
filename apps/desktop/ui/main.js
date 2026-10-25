@@ -11,6 +11,7 @@ import { createCamera } from "./lib/camera.js";
 import { createMic, FLOOR_DB } from "./lib/mic.js";
 import { PRESETS, drawPreset, presetSource, loadImageFile, imageFromDataUrl } from "./lib/backgrounds.js";
 import { createMeetings, bindOpenAtLogin } from "./lib/meetings.js";
+import { bindUpdates } from "./lib/updates.js";
 import { invoke, hasBackend, listen } from "./lib/tauri.js";
 import { initWindow } from "./lib/window.js";
 
@@ -986,6 +987,7 @@ async function init() {
     previewLabel: () => els.camera.selectedOptions[0]?.textContent || "",
   }).init();
   if (hasBackend()) bindOpenAtLogin($("open-at-login"));
+  if (hasBackend()) bindUpdates({ section: $("updates"), version: $("update-version"), info: $("update-info"), action: $("update-action") });
 }
 
 init();

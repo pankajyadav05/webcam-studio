@@ -1,0 +1,110 @@
+name: Release
+
+# Builds, signs, notarizes and publishes Webcam Studio on the owner's Mac (self-hosted
+# runner): the Developer ID identity and notarytool profile are in its login keychain, the
+# updater key is in ~/.webcam-studio-release, and Cloudflare uses its wrangler login. No
+# credentials are stored in GitHub. See docs/release.md.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (x.y.z). Empty uses the version in Cargo.toml.
+        type: string
+        required: false
+      notes:
+        description: Release notes (optional; default lists the commits since the last release)
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    runs-on: [self-hosted, macOS, webcam-studio-mac]
+    timeout-minutes: 90
+    steps:
+      - name: Only main
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo '::error::Release from main only'; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Keep the Mac's build folder so Rust only recompiles what changed.
+          clean: false
+      - name: Pick the version
+        id: version
+        env:
+          INPUT: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          current=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          version=${INPUT:-$current}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Not a version: $version"; exit 1; }
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::v$version is already tagged"; exit 1
+          fi
+          if [[ "$version" != "$current" ]]; then
+            sed -i '' "s/^version = \"$current\"/version = \"$version\"/" Cargo.toml
+            cargo update --workspace --offline >/dev/null 2>&1 || cargo update --workspace
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "changed=$([[ "$version" != "$current" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "Releasing Webcam Studio $version from $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Tests
+        run: |
+          set -euo pipefail
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+          (cd apps/desktop && node --test)
+          node --test scripts/release/feed.test.mjs
+      - name: Build, sign and notarize
+        run: scripts/release/build-mac.sh "${{ steps.version.outputs.version }}"
+      - name: Release notes
+        env:
+          NOTES: ${{ inputs.notes }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          file="dist/release/$VERSION/notes.md"
+          if [[ -n "$NOTES" ]]; then
+            printf '%s\n' "$NOTES" > "$file"
+          else
+            last=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+            git log --no-merges --format='- %s' ${last:+"$last"..HEAD} > "$file"
+          fi
+          cat "$file"
+      - name: Publish to R2
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/release/publish.sh "$VERSION" "dist/release/$VERSION/notes.md"
+      - name: Tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CHANGED: ${{ steps.version.outputs.changed }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if [[ "$CHANGED" == true ]]; then
+            git add Cargo.toml Cargo.lock
+            git commit -m "Release $VERSION"
+          fi
+          git tag -a "v$VERSION" -m "Webcam Studio $VERSION"
+          git push --atomic origin HEAD:main "refs/tags/v$VERSION"
+          dir="dist/release/$VERSION"
+          gh release create "v$VERSION" --title "Webcam Studio $VERSION" --notes-file "$dir/notes.md" \
+            "$dir/Webcam-Studio_${VERSION}_aarch64.dmg" \
+            "$dir/Webcam-Studio_${VERSION}_aarch64.app.tar.gz" \
+            "$dir/Webcam-Studio_${VERSION}_aarch64.app.tar.gz.sig" \
+            "$dir/SHA256SUMS"

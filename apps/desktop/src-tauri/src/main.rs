@@ -13,6 +13,7 @@ mod pipeline;
 mod samples;
 mod segmentation;
 mod state;
+mod updater;
 mod vcam;
 mod window;
 
@@ -156,6 +157,12 @@ fn open_extension_settings() -> Result<(), String> {
     extension::open_settings()
 }
 
+/// The version of this app, for Settings.
+#[tauri::command]
+fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 fn main() {
     logfile::init();
     log::info!("Webcam Studio {} started", env!("CARGO_PKG_VERSION"));
@@ -167,8 +174,10 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![background::HIDDEN_ARG]),
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(auto_camera::MeetingCamera::default())
         .setup(|app| {
+            updater::initialize(app.handle());
             let switch = app.path().app_config_dir()?.join("meeting-camera.json");
             app.manage(auto_camera::MeetingSwitch::load(switch));
             window::setup(app)?;
@@ -210,6 +219,10 @@ fn main() {
             install_camera_extension,
             uninstall_camera_extension,
             open_extension_settings,
+            updater::update_status,
+            updater::check_for_updates,
+            updater::restart_to_update,
+            app_version,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Webcam Studio")

@@ -49,6 +49,17 @@ $("setup").addEventListener("click", (event) => {
   invoke("open_settings");
 });
 $("quit").addEventListener("click", () => invoke("quit_app"));
+
+// A downloaded update: one click installs it and starts the new version.
+const update = $("update");
+function showUpdate(status) {
+  const ready = status?.state === "ready";
+  update.hidden = !ready;
+  if (ready) update.textContent = `Restart to Update (${status.version})`;
+}
+update.addEventListener("click", () => invoke("restart_to_update").catch(() => invoke("open_settings")));
+invoke("update_status").then(showUpdate).catch(() => {});
+listen("update-status", (event) => showUpdate(event.payload));
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") invoke("hide_menu_panel");
   if (event.metaKey && event.key === ",") { event.preventDefault(); invoke("open_settings"); }
