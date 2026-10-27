@@ -7,7 +7,7 @@ default-members = ["crates/*"]
 [workspace.package]
 edition = "2024"
 license = "GPL-3.0-or-later"
-version = "0.2.0"
+version = "0.2.1"
 repository = "https://github.com/pankajyadav05/webcam-studio"
 rust-version = "1.85"
 

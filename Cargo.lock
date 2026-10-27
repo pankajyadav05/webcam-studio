@@ -3372,14 +3372,14 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "studio-audio"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "studio-core",
 ]
 
 [[package]]
 name = "studio-capture"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "block2",
  "dispatch2",
@@ -3396,7 +3396,7 @@ dependencies = [
 
 [[package]]
 name = "studio-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -3405,7 +3405,7 @@ dependencies = [
 
 [[package]]
 name = "studio-engine"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "image",
  "rayon",
@@ -3416,7 +3416,7 @@ dependencies = [
 
 [[package]]
 name = "studio-segmentation"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "log",
  "objc2",
@@ -3433,7 +3433,7 @@ dependencies = [
 
 [[package]]
 name = "studio-vdevice"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "studio-core",
  "studio-vdevice-linux",
@@ -3443,14 +3443,14 @@ dependencies = [
 
 [[package]]
 name = "studio-vdevice-linux"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "studio-core",
 ]
 
 [[package]]
 name = "studio-vdevice-macos"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "dispatch2",
  "objc2",
@@ -3465,7 +3465,7 @@ dependencies = [
 
 [[package]]
 name = "studio-vdevice-windows"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "studio-core",
 ]
@@ -4592,7 +4592,7 @@ dependencies = [
 
 [[package]]
 name = "webcam-studio-desktop"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "image",
  "log",
