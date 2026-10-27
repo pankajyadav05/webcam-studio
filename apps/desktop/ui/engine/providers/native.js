@@ -1,9 +1,9 @@
 import { ProviderControl } from './control.js';
 import { encodeFrame, decodeMask } from './protocol.js';
-export const nativeInvoke = (command, body) => {
+export const nativeInvoke = (command, body, options) => {
   const invoke = globalThis.__TAURI__?.core?.invoke;
   if (!invoke) return Promise.reject(new Error('Native segmentation command unavailable'));
-  return invoke(command, body);
+  return invoke(command, body, options);
 };
 export class NativeProvider {
   constructor({ invoke = nativeInvoke, quality = 'balanced', timeoutMs } = {}) {

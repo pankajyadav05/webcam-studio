@@ -26,6 +26,23 @@
         <button class="setup" id="setup" type="button" hidden>Set Up</button>
       </label>
 
+      <label class="module away" id="away-module">
+        <span class="tile" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M10 9v6M14 9v6"/></svg>
+        </span>
+        <span class="text">
+          <b>Be right back</b>
+          <small><span id="away-text">Show a card instead of you</span></small>
+        </span>
+        <input class="switch" id="away" type="checkbox" role="switch" aria-describedby="away-text" />
+      </label>
+
+      <nav class="items scenes" id="scenes" aria-label="Scenes" hidden>
+        <p class="label">Scenes</p>
+        <div id="scene-items"></div>
+        <hr />
+      </nav>
+
       <nav class="items">
         <button type="button" id="update" class="update" hidden>Restart to Update</button>
         <button type="button" id="open">Open Webcam Studio</button>

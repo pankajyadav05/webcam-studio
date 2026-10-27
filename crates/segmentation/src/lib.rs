@@ -1,9 +1,11 @@
 //! Person masks for the native renderer and the browser pipeline.
 
+pub mod face;
 pub mod person;
 pub mod protocol;
 #[cfg(target_os = "macos")]
 mod vision;
+pub use face::{Eye, EyePair, FaceBox, FaceDetector, HandBox, Sighting, VisionFaceDetector, Want};
 pub use person::{PersonSegmenter, Quality, VisionSegmenter};
 
 use studio_core::frame::VideoFrame;

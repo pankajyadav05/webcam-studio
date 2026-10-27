@@ -1,4 +1,6 @@
 import { TUNING_DEFAULTS, normalizeTuning } from '../engine/tuning.js';
+import { APPEARANCE_DEFAULTS, normalizeAppearance } from '../engine/look.js';
+import { cleanScenes } from './scenes.js';
 // What the person chose, remembered between launches.
 //
 // The window is the one place these choices live. Anything that reads them subscribes, and
@@ -19,8 +21,12 @@ export const DEFAULTS = Object.freeze({
   pan_y: 0,
   mirror: false,
   grid: false,
+  autoFrame: false,
+  showAndTell: false,
+  appearance: { ...APPEARANCE_DEFAULTS },
+  scenes: [],
   background: { mode: "none", radius: 12, preset: "studio", custom: null, ...TUNING_DEFAULTS, quality: "balanced", view: "composite" },
-  mic: { deviceId: "", noise: true },
+  mic: { deviceId: "" },
 });
 
 export function clamp(value, lo, hi, fallback) {
@@ -40,6 +46,10 @@ function clean(raw) {
     pan_y: clamp(r.pan_y, -1, 1, 0),
     mirror: r.mirror === true,
     grid: r.grid === true,
+    autoFrame: r.autoFrame === true,
+    showAndTell: r.showAndTell === true,
+    scenes: cleanScenes(r.scenes),
+    appearance: normalizeAppearance(r.appearance && typeof r.appearance === "object" ? r.appearance : {}),
     background: {
       ...normalizeTuning(bg),
       quality: bg.quality === "accurate" ? "accurate" : "balanced",
@@ -51,7 +61,6 @@ function clean(raw) {
     },
     mic: {
       deviceId: typeof mic.deviceId === "string" ? mic.deviceId : "",
-      noise: mic.noise !== false,
     },
   };
 }
@@ -74,11 +83,12 @@ export function createStore(storage = safeStorage()) {
 
   return {
     get: () => state,
-    // `patch` may hold `background` or `mic` parts; those are merged, not replaced.
+    // `patch` may hold `background`, `appearance` or `mic` parts; those are merged, not replaced.
     set(patch) {
       const next = {
         ...state,
         ...patch,
+        appearance: { ...state.appearance, ...(patch.appearance || {}) },
         background: { ...state.background, ...(patch.background || {}) },
         mic: { ...state.mic, ...(patch.mic || {}) },
       };

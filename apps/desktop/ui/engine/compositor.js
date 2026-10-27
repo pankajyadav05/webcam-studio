@@ -1,5 +1,6 @@
 /** One WebGL2 compositor. Failure leaves the safe cover visible, never raw video. */
 import { tuningParams } from './tuning.js';
+import { LOOK } from './look.js';
 const vertex = `#version 300 es
 in vec2 position;
 out vec2 uv;
@@ -9,20 +10,72 @@ precision highp float;
 precision highp sampler2D;
 in vec2 uv;
 out vec4 color;
-uniform sampler2D camera, source, matte, background;
+uniform sampler2D camera, source, matte, background, lookA, lookB;
 uniform vec4 crop, imageCrop;
-uniform bool mirror, cameraBitmap, backgroundBitmap;
+uniform bool mirror, cameraBitmap, backgroundBitmap, lookOn, lookSmooth;
+uniform float lookMix, lookGain, lookWarmth;
+uniform bool spotOn;
+uniform vec4 spot, spotShape;   // spot: centre and reach in output pixels; shape: dim, lift, falloff
+uniform vec2 outSize;
+uniform float spotPresence;
 vec2 cameraUV(vec2 v) {
   if (mirror) v.x = 1. - v.x;
   vec2 c = vec2(crop.x + v.x * crop.z, crop.y + (1. - v.y) * crop.w);
   return cameraBitmap ? c : vec2(c.x, 1. - c.y);
 }
-vec3 cameraAt(vec2 v) { return textureLod(camera, cameraUV(v), 0.).rgb; }
+vec3 rawAt(vec2 v) { return textureLod(camera, cameraUV(v), 0.).rgb; }
+float band(float x, float lo, float hi, float soft) {
+  return smoothstep(lo - soft, lo + soft, x) * (1. - smoothstep(hi - soft, hi + soft, x));
+}
+float skinWeight(vec3 c) {
+  float y = dot(c, vec3(.299, .587, .114)) * 255.;
+  float cb = 128. + dot(c, vec3(-.168736, -.331264, .5)) * 255.;
+  float cr = 128. + dot(c, vec3(.5, -.418688, -.081312)) * 255.;
+  return band(cb, 77., 127., 6.) * band(cr, 133., 173., 6.) * band(y, 35., 250., 15.);
+}
+// Touch-ups, in the same order as crates/engine/src/appearance.rs: smoothing on skin, then
+// the low-light curve, then warmth. lookA/lookB hold the guided filter (a, skin) and (b).
+vec3 cameraAt(vec2 v) {
+  vec3 c = rawAt(v);
+  if (!lookOn) return c;
+  if (lookSmooth) {
+    vec4 a = texture(lookA, v);
+    vec3 q = a.rgb * c + texture(lookB, v).rgb;
+    c = mix(c, q, a.a * skinWeight(c) * lookMix);
+  }
+  c = clamp(c, 0., 1.);
+  c = c * lookGain / (1. + (lookGain - 1.) * c);
+  c *= vec3(1. + lookWarmth, 1., 1. - lookWarmth);
+  c = clamp(c, 0., 1.);
+  if (spotOn) {
+    // Studio Light (studio_light.rs): lift the face, dim the room, fade with presence.
+    vec2 d = (vec2(v.x, 1. - v.y) * outSize - spot.xy) / spot.zw;
+    float k = 1. - smoothstep(spotShape.z, spotShape.w, length(d));
+    vec3 dark = c * (1. - spotShape.x);
+    vec3 bright = c * (1. + spotShape.y) / (1. + spotShape.y * c);
+    c = mix(c, mix(dark, bright, k), spotPresence);
+  }
+  return clamp(c, 0., 1.);
+}
 float guide(vec2 v) { return dot(textureLod(camera, cameraUV(v), 1.).rgb, vec3(.2126,.7152,.0722)); }
 vec3 linearize(vec3 v) { return pow(max(v, vec3(0.)), vec3(2.2)); }
 vec3 encode(vec3 v) { return pow(max(v, vec3(0.)), vec3(1./2.2)); }
 `;
 const shaders = {
+  // The touch-up's guided filter, at half size in output space.
+  lookMoments: `uniform int which;
+  void main() {
+    vec3 c = texture(camera, cameraUV(uv)).rgb;
+    color = which == 0 ? vec4(c, 1.) : vec4(c * c, 1.);
+  }`,
+  lookCoefficients: `uniform sampler2D squares;
+  uniform float lookEpsilon;
+  uniform int which;
+  void main() {
+    vec3 m = texture(source, uv).rgb, m2 = texture(squares, uv).rgb;
+    vec3 a = max(m2 - m*m, vec3(0.)); a = a / (a + lookEpsilon);
+    color = which == 0 ? vec4(a, skinWeight(m)) : vec4(m - a*m, 1.);
+  }`,
   moments: `void main() {
     float i = guide(uv);
     vec2 c = cameraUV(uv);
@@ -143,6 +196,8 @@ export function createCompositor({ onStatus = () => {} } = {}) {
     const sizes = Array.from({ length: 6 }, () => [halfW, halfH]);
     sizes.push([width, height]);
     for (let level=1; level<=7; level++) sizes.push([Math.max(1, width>>level), Math.max(1, height>>level)]);
+    // Four more at half size for the touch-up (14..17).
+    for (let i=0; i<4; i++) sizes.push([halfW, halfH]);
     resources.targets = sizes.map(([w,h], index) => {
       const t = resources.texture(); bind(0, t);
       const floating = index !== 6;
@@ -160,7 +215,7 @@ export function createCompositor({ onStatus = () => {} } = {}) {
     for (const [name, value] of Object.entries(params)) {
       const at = u[name]; if (at == null) continue;
       if (Array.isArray(value)) gl[`uniform${value.length}fv`](at, value);
-      else if (['mirror','cameraBitmap','backgroundBitmap','hasMask','mode','alphaOnly'].includes(name)) gl.uniform1i(at, value);
+      else if (['mirror','cameraBitmap','backgroundBitmap','hasMask','mode','alphaOnly','lookOn','lookSmooth','which','spotOn'].includes(name)) gl.uniform1i(at, value);
       else gl.uniform1f(at, value);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, target ? resources.framebuffer : null);
@@ -180,7 +235,7 @@ export function createCompositor({ onStatus = () => {} } = {}) {
   }
   return {
     canvas,
-    draw({ image, frameKey, mask, crop = [0,0,1,1], mirror = false, background = {mode:'none'}, width, height, fade = 1, alphaOnly = false, tuning }) {
+    draw({ image, frameKey, mask, crop = [0,0,1,1], mirror = false, background = {mode:'none'}, width, height, fade = 1, alphaOnly = false, tuning, look = null }) {
       if (lost || gl.isContextLost()) throw new Error('Graphics context unavailable');
       resize(width, height);
       const r = resources, targets = r.targets;
@@ -198,7 +253,27 @@ export function createCompositor({ onStatus = () => {} } = {}) {
       if (background.image && background.image !== lastBackground) {
         uploadDOM(r.background, background.image); lastBackground = background.image;
       }
-      const params = { crop, mirror, cameraBitmap:typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap, hasMask: !!mask, curveLow:t.curveLow, curveHigh:t.curveHigh, curveMix:t.curveMix };
+      const params = { crop, mirror, cameraBitmap:typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap, hasMask: !!mask, curveLow:t.curveLow, curveHigh:t.curveHigh, curveMix:t.curveMix,
+        lookOn: !!look && !alphaOnly, lookSmooth: !!look?.smooth, lookMix: look?.mix ?? 0, lookGain: look?.gain ?? 1, lookWarmth: look?.warmth ?? 0,
+        spotOn: !!look?.spot && !alphaOnly, spot: look?.spot ? [look.spot.cx, look.spot.cy, Math.max(1, look.spot.rx), Math.max(1, look.spot.ry)] : [0,0,1,1],
+        spotShape: look?.spotShape || [0,0,1,2], spotPresence: look?.spotPresence ?? 0, outSize: [width, height] };
+      const lookInputs = {};
+      if (params.lookOn && params.lookSmooth) {
+        // Guided filter of the picture with itself (see appearance.rs): box means of I and
+        // I², then a = var/(var+ε) and b = mean − a·mean, then box means of a and b.
+        const [m, m2, a, b] = [targets[14], targets[15], targets[16], targets[17]];
+        const radius = Math.max(1, Math.round(height * LOOK.smoothRadius));
+        const step = [radius / 3 / m.width, 0], down = [0, radius / 3 / m.height];
+        pass('lookMoments', m, { camera:r.camera }, { ...params, which:0 });
+        pass('lookMoments', m2, { camera:r.camera }, { ...params, which:1 });
+        pass('box', a, { source:m.texture }, { stepSize:step }); pass('box', m, { source:a.texture }, { stepSize:down });
+        pass('box', a, { source:m2.texture }, { stepSize:step }); pass('box', m2, { source:a.texture }, { stepSize:down });
+        pass('lookCoefficients', a, { source:m.texture, squares:m2.texture }, { lookEpsilon:look.epsilon, which:0 });
+        pass('lookCoefficients', b, { source:m.texture, squares:m2.texture }, { lookEpsilon:look.epsilon, which:1 });
+        pass('box', m, { source:a.texture }, { stepSize:step }); pass('box', a, { source:m.texture }, { stepSize:down });
+        pass('box', m, { source:b.texture }, { stepSize:step }); pass('box', b, { source:m.texture }, { stepSize:down });
+        lookInputs.lookA = a.texture; lookInputs.lookB = b.texture;
+      }
       if (mask) {
         pass('moments', targets[0], { camera:r.camera, matte:r.mask }, params);
         pass('box', targets[1], { source:targets[0].texture }, { stepSize:[tap/targets[0].width,0] });
@@ -211,7 +286,7 @@ export function createCompositor({ onStatus = () => {} } = {}) {
       const mode = background.mode === 'none' ? 0 : background.mode === 'blur' ? 1 : 2;
       let blurred = targets[7];
       if (mode === 1) {
-        pass('premultiply', targets[7], { camera:r.camera, matte:targets[6].texture }, params);
+        pass('premultiply', targets[7], { camera:r.camera, matte:targets[6].texture, ...lookInputs }, params);
         // Small taps at successively lower resolution avoid separated ghost copies.
         const radius = mask ? Math.max(4, background.radius || 8) : 50;
         const levels = Math.min(6, Math.max(2, Math.ceil(Math.log2(radius))));
@@ -230,7 +305,7 @@ export function createCompositor({ onStatus = () => {} } = {}) {
       const ih = background.image?.naturalHeight || background.image?.height || 1;
       const ar = width/height, imageAr = iw/ih;
       const cw = Math.min(1, ar/imageAr), ch = Math.min(1, imageAr/ar);
-      pass('composite', null, { camera:r.camera, matte:targets[6].texture, source:blurred.texture, background:r.background },
+      pass('composite', null, { camera:r.camera, matte:targets[6].texture, source:blurred.texture, background:r.background, ...lookInputs },
         { ...params, mode, fade, alphaOnly, backgroundBitmap:typeof ImageBitmap !== 'undefined' && background.image instanceof ImageBitmap, imageCrop:[(1-cw)/2,(1-ch)/2,cw,ch] });
       return canvas;
     },

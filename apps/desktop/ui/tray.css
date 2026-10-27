@@ -125,6 +125,11 @@ body {
   font: inherit;
   text-align: left;
 }
+.items .label { margin: 2px 8px 2px; color: var(--text-2); font-size: 11px; font-weight: 600; }
+.items .check { width: 14px; flex: none; text-align: center; }
+.items .scene { justify-content: flex-start; gap: 4px; }
+.items .scene span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.items .scene kbd { margin-left: auto; padding-left: 8px; }
 .items button:hover, .items button:focus-visible { background: var(--accent); color: #fff; outline: none; }
 .items button:hover kbd, .items button:focus-visible kbd { color: rgba(255, 255, 255, 0.8); }
 .items kbd { font: inherit; color: var(--text-2); }

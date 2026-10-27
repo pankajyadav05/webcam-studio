@@ -5,6 +5,7 @@
 // remembering the choices.
 
 import { TUNING_DEFAULTS } from "./engine/tuning.js";
+import { APPEARANCE_DEFAULTS, isLookActive } from "./engine/look.js";
 import { createPreviewSources } from "./lib/preview-source.js";
 import { createStore, clamp, ZOOM_MIN, ZOOM_MAX } from "./lib/store.js";
 import { createCamera } from "./lib/camera.js";
@@ -12,6 +13,8 @@ import { createMic, FLOOR_DB } from "./lib/mic.js";
 import { PRESETS, drawPreset, presetSource, loadImageFile, imageFromDataUrl } from "./lib/backgrounds.js";
 import { createMeetings, bindOpenAtLogin } from "./lib/meetings.js";
 import { bindUpdates } from "./lib/updates.js";
+import { drawAwayCard } from "./lib/away-card.js";
+import { addScene, removeScene, activeScene, scenePatch, describeLook, lookOf } from "./lib/scenes.js";
 import { invoke, hasBackend, listen } from "./lib/tauri.js";
 import { initWindow } from "./lib/window.js";
 
@@ -51,7 +54,6 @@ const els = {
   meter: $("meter"),
   meterBar: $("meter-bar"),
   meterPeak: $("meter-peak"),
-  noise: $("noise"),
   micInfo: $("mic-info"),
   micFix: $("mic-fix"),
   meetings: $("meetings"),
@@ -64,7 +66,16 @@ const els = {
   formatChip: $("format-chip"),
   formatText: $("format-text"),
   micSummary: $("mic-summary"),
-  miniMeterBar: $("mini-meter-bar"),
+  autoFrame: $("auto-frame"),
+  autoChip: $("auto-chip"),
+  touchUp: $("touch-up"),
+  touchUpReadout: $("touch-up-readout"),
+  lowLight: $("low-light"),
+  studioLight: $("studio-light"),
+  studioLightReadout: $("studio-light-readout"),
+  warmth: $("warmth"),
+  warmthReadout: $("warmth-readout"),
+  appearanceSummary: $("appearance-summary"),
   advancedRow: $("advanced-row"),
   advancedSummary: $("advanced-summary"),
 };
@@ -81,6 +92,13 @@ let nativeQualityAvailable = false;
 let cropRect = null;
 let OUTPUT = { width: 1280, height: 720 };
 let customSource = null; // the picture the person chose, once loaded
+// Auto-frame needs Apple Vision to find faces; the button shows only where it can.
+let autoAvailable = false;
+// While auto-frame moves the picture, the zoom it reached, for the controls.
+let autoZoom = 1;
+// Be right back: owned by the Rust side (the menu bar and a shortcut switch it too).
+let away = false;
+const awayCard = drawAwayCard(1280, 720);
 
 // ---------------------------------------------------------------------------
 // Drawing the controls from the saved choices
@@ -95,19 +113,68 @@ function paintSlider(input) {
 }
 
 const zoomText = (zoom) => `${zoom.toFixed(1)}×`;
+const autoOn = (s) => s.autoFrame && autoAvailable;
+
+// The zoom controls show the manual zoom, or where auto-frame has moved to.
+function renderZoom(zoom, auto) {
+  els.zoomOut.disabled = !auto && zoom <= ZOOM_MIN;
+  els.zoomIn.disabled = !auto && zoom >= ZOOM_MAX;
+  els.zoom.setAttribute("aria-valuetext", `${zoom.toFixed(2)} times${auto ? ", set by auto-frame" : ""}`);
+  els.zoom.value = String(zoom);
+  paintSlider(els.zoom);
+  els.zoomReadout.textContent = zoomText(zoom);
+  els.zoomChip.textContent = zoomText(zoom);
+  els.zoomChip.hidden = auto || zoom <= ZOOM_MIN + 0.001;
+  els.frame.classList.toggle("pannable", auto || zoom > ZOOM_MIN + 0.001);
+}
+
+function percent(value) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function appearanceSummary(a) {
+  if (!isLookActive(a)) return "Off";
+  const parts = [];
+  if (a.smoothing > 0.001) parts.push(`Touch up ${percent(a.smoothing)}`);
+  if (a.studio_light > 0.001) parts.push("Studio Light");
+  if (a.low_light) parts.push("Low light");
+  if (Math.abs(a.warmth) > 0.001) parts.push(a.warmth > 0 ? "Warmer" : "Cooler");
+  return parts.join(" · ");
+}
 
 function render() {
   const s = store.get();
+  const auto = autoOn(s);
 
-  els.zoomOut.disabled = s.zoom <= ZOOM_MIN;
-  els.zoomIn.disabled = s.zoom >= ZOOM_MAX;
-  els.zoom.setAttribute("aria-valuetext", `${s.zoom.toFixed(2)} times`);
-  els.zoom.value = String(s.zoom);
-  paintSlider(els.zoom);
-  els.zoomReadout.textContent = zoomText(s.zoom);
-  els.zoomChip.textContent = zoomText(s.zoom);
-  els.zoomChip.hidden = s.zoom <= ZOOM_MIN + 0.001;
-  els.frame.classList.toggle("pannable", s.zoom > ZOOM_MIN + 0.001);
+  renderZoom(auto ? autoZoom : s.zoom, auto);
+  els.autoFrame.hidden = !autoAvailable;
+  els.autoFrame.setAttribute("aria-pressed", String(auto));
+  els.autoChip.hidden = !auto;
+  $("smart-camera").hidden = !autoAvailable;
+  $("show-and-tell").checked = s.showAndTell;
+
+  const a = s.appearance;
+  els.touchUp.value = String(Math.round(a.smoothing * 100));
+  paintSlider(els.touchUp);
+  els.touchUp.setAttribute("aria-valuetext", a.smoothing > 0.001 ? percent(a.smoothing) : "Off");
+  els.touchUpReadout.textContent = a.smoothing > 0.001 ? percent(a.smoothing) : "Off";
+  els.lowLight.checked = a.low_light;
+  $("studio-light-field").hidden = !autoAvailable;
+  els.studioLight.value = String(Math.round(a.studio_light * 100));
+  paintSlider(els.studioLight);
+  els.studioLight.setAttribute("aria-valuetext", a.studio_light > 0.001 ? percent(a.studio_light) : "Off");
+  els.studioLightReadout.textContent = a.studio_light > 0.001 ? percent(a.studio_light) : "Off";
+  els.warmth.value = String(Math.round(a.warmth * 100));
+  paintSlider(els.warmth);
+  const warmthText = Math.abs(a.warmth) < 0.005 ? "Neutral" : `${a.warmth > 0 ? "Warmer" : "Cooler"} ${percent(Math.abs(a.warmth))}`;
+  els.warmth.setAttribute("aria-valuetext", warmthText);
+  els.warmthReadout.textContent = Math.abs(a.warmth) < 0.005 ? "0" : `${a.warmth > 0 ? "+" : "−"}${Math.round(Math.abs(a.warmth) * 100)}`;
+  $("reset-appearance").disabled = !isLookActive(a);
+  els.appearanceSummary.textContent = appearanceSummary(a);
+
+  renderScenes(s);
+  $("away-button").setAttribute("aria-pressed", String(away));
+  $("away-chip").hidden = !away;
 
   els.mirror.setAttribute("aria-pressed", String(s.mirror));
   els.gridToggle.setAttribute("aria-pressed", String(s.grid));
@@ -145,13 +212,13 @@ function render() {
     swatch.tabIndex = selected ? 0 : -1;
   }
 
-  els.noise.checked = s.mic.noise;
-
   if (engine) {
+    engine.setAppearance(s.appearance);
+    engine.setShowAndTell(s.showAndTell && autoAvailable);
     engine.setTuning(s.background);
     engine.setQuality(s.background.quality);
     engine.setView(s.background.view);
-    engine.setFraming({ zoom: s.zoom, pan_x: s.pan_x, pan_y: s.pan_y, mirror: s.mirror });
+    engine.setFraming({ zoom: s.zoom, pan_x: s.pan_x, pan_y: s.pan_y, mirror: s.mirror, auto });
     engine.setBackground({
       mode,
       radius: s.background.radius,
@@ -186,16 +253,17 @@ function syncBackend() {
     const picture = b.mode === "replace" ? pictureKey(s) : "";
     invoke("set_settings", {
       settings: {
-        framing: { zoom: s.zoom, pan_x: s.pan_x, pan_y: s.pan_y, mirror: s.mirror, auto_frame: false },
+        framing: { zoom: s.zoom, pan_x: s.pan_x, pan_y: s.pan_y, mirror: s.mirror, auto_frame: autoOn(s), show_and_tell: s.showAndTell && autoAvailable },
         background:
           b.mode === "blur" ? { mode: "blur", radius: b.radius }
           : picture ? { mode: "replace", image_path: picture }
           : { mode: "none" },
-        noise: s.mic.noise ? "light" : "off",
+        noise: "off",
         output_width: OUTPUT.width,
         output_height: OUTPUT.height,
         output_fps: 30,
         cutout: { cutoff: b.cutoff, softness: b.softness, steadiness: b.steadiness },
+        appearance: { ...s.appearance },
       },
     }).catch(() => {});
     if (picture && picture !== sentPicture) {
@@ -246,8 +314,23 @@ function sendPicture(key, source) {
 // Moving the picture: zoom, pan, reset
 // ---------------------------------------------------------------------------
 
+// Moving the picture by hand ends auto-frame where it got to, so nothing jumps.
+function takeManual() {
+  const s = store.get();
+  if (!s.autoFrame) return;
+  const f = autoOn(s) ? engine?.getFraming() : null;
+  store.set({ autoFrame: false, ...(f ? { zoom: round3(f.zoom), pan_x: round3(f.pan_x), pan_y: round3(f.pan_y) } : {}) });
+}
+
+function toggleAutoFrame() {
+  if (!autoAvailable) return;
+  if (store.get().autoFrame) takeManual();
+  else store.set({ autoFrame: true });
+}
+
 // Zooms to `zoom`, keeping the point under `anchor` (0..1 across the frame) where it is.
 function zoomTo(zoom, anchor) {
+  takeManual();
   const s = store.get();
   const next = round3(clamp(zoom, ZOOM_MIN, ZOOM_MAX, 1));
   const vw = (sources?.video || els.video).videoWidth;
@@ -278,7 +361,7 @@ function panFor(crop, x, y, vw, vh) {
 }
 
 function resetFraming() {
-  store.set({ zoom: 1, pan_x: 0, pan_y: 0 });
+  store.set({ autoFrame: false, zoom: 1, pan_x: 0, pan_y: 0 });
 }
 
 function bindFraming() {
@@ -286,6 +369,7 @@ function bindFraming() {
   els.zoomOut.addEventListener("click", () => zoomTo(store.get().zoom - 0.25, null));
   els.zoomIn.addEventListener("click", () => zoomTo(store.get().zoom + 0.25, null));
   els.mirror.addEventListener("click", () => store.set({ mirror: !store.get().mirror }));
+  els.autoFrame.addEventListener("click", toggleAutoFrame);
   els.gridToggle.addEventListener("click", () => store.set({ grid: !store.get().grid }));
   els.reset.addEventListener("click", resetFraming);
   els.frame.addEventListener("dblclick", resetFraming);
@@ -309,6 +393,7 @@ function bindFraming() {
   let pinchFrom = 1;
   els.frame.addEventListener("gesturestart", (event) => {
     event.preventDefault();
+    takeManual();
     pinchFrom = store.get().zoom;
   });
   els.frame.addEventListener("gesturechange", (event) => {
@@ -320,16 +405,23 @@ function bindFraming() {
   let drag = null;
   els.frame.addEventListener("pointerdown", (event) => {
     const s = store.get();
-    if (event.target.closest("button") || event.button !== 0 || s.zoom <= ZOOM_MIN + 0.001 || !cropRect || !engine) {
+    const auto = autoOn(s);
+    if (event.target.closest("button") || event.button !== 0 || (!auto && s.zoom <= ZOOM_MIN + 0.001) || !cropRect || !engine) {
       return;
     }
     els.frame.setPointerCapture(event.pointerId);
     els.frame.classList.add("panning");
-    drag = { x: event.clientX, y: event.clientY, crop: engine.getCrop(), box: els.frame.getBoundingClientRect() };
+    // With auto-frame on, a click alone keeps it; only a real drag takes over.
+    drag = { x: event.clientX, y: event.clientY, crop: engine.getCrop(), box: els.frame.getBoundingClientRect(), pending: auto };
   });
   els.frame.addEventListener("pointermove", (event) => {
     if (!drag) {
       return;
+    }
+    if (drag.pending) {
+      if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
+      takeManual();
+      drag = { ...drag, crop: engine.getCrop(), pending: false };
     }
     const s = store.get();
     const vw = (sources?.video || els.video).videoWidth;
@@ -369,7 +461,11 @@ function bindFraming() {
     const step = event.shiftKey ? 0.25 : 0.08;
     const nudge = (key, value) => {
       event.preventDefault();
-      store.set({ [key]: round3(clamp(value, -1, 1, 0)) });
+      const before = store.get();
+      takeManual();
+      const after = store.get();
+      // `value` was worked out from the framing before auto-frame let go.
+      store.set({ [key]: round3(clamp(value - before[key] + after[key], -1, 1, 0)) });
     };
     switch (event.key) {
       case "ArrowLeft":
@@ -397,6 +493,9 @@ function bindFraming() {
       case "g":
       case "G":
         return store.set({ grid: !s.grid });
+      case "f":
+      case "F":
+        return toggleAutoFrame();
       default:
     }
   });
@@ -500,6 +599,131 @@ function bindBackground() {
 }
 
 // ---------------------------------------------------------------------------
+// Appearance: touch up, low light, warmth
+// ---------------------------------------------------------------------------
+
+function bindAppearance() {
+  els.touchUp.addEventListener("input", () => store.set({ appearance: { smoothing: Number(els.touchUp.value) / 100 } }));
+  els.studioLight.addEventListener("input", () => store.set({ appearance: { studio_light: Number(els.studioLight.value) / 100 } }));
+  els.lowLight.addEventListener("change", () => store.set({ appearance: { low_light: els.lowLight.checked } }));
+  els.warmth.addEventListener("input", () => {
+    // Neutral is easy to find again: values near the middle snap to it.
+    const value = Number(els.warmth.value);
+    store.set({ appearance: { warmth: Math.abs(value) <= 3 ? 0 : value / 100 } });
+  });
+  els.warmth.addEventListener("dblclick", () => store.set({ appearance: { warmth: 0 } }));
+  $("reset-appearance").addEventListener("click", () => store.set({ appearance: { ...APPEARANCE_DEFAULTS } }));
+}
+
+// ---------------------------------------------------------------------------
+// Scenes: a saved look, back in one click (here, the menu bar, or ⌘1 to ⌘9)
+// ---------------------------------------------------------------------------
+
+let publishedScenes = "";
+function renderScenes(s) {
+  const active = activeScene(s.scenes, s);
+  const current = s.scenes.find((scene) => scene.id === active);
+  $("scenes-summary").textContent = current ? current.name : s.scenes.length ? "Custom look" : "None saved";
+  $("scene-now").textContent = `Now: ${describeLook(lookOf(s))}${current ? ` · saved as ${current.name}` : ""}`;
+  const list = $("scene-list");
+  list.hidden = s.scenes.length === 0;
+  const focused = document.activeElement?.closest?.("[data-scene]")?.dataset.scene;
+  list.replaceChildren(...s.scenes.map((scene, index) => {
+    const row = document.createElement("div");
+    row.className = "row scene-row";
+    row.dataset.scene = scene.id;
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "scene-pick";
+    pick.setAttribute("role", "radio");
+    pick.setAttribute("aria-checked", String(scene.id === active));
+    pick.innerHTML = '<span class="radio" aria-hidden="true"></span><span class="row-text"><b></b><small></small></span><span class="scene-key" aria-hidden="true"></span>';
+    pick.querySelector("b").textContent = scene.name;
+    pick.querySelector("small").textContent = describeLook(scene.look);
+    pick.querySelector(".scene-key").textContent = index < 9 ? `⌘${index + 1}` : "";
+    pick.addEventListener("click", () => applyScene(scene.id));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "icon-btn scene-delete";
+    remove.setAttribute("aria-label", `Delete ${scene.name}`);
+    remove.title = "Delete scene";
+    remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    remove.addEventListener("click", () => store.set({ scenes: removeScene(store.get().scenes, scene.id) }));
+    row.append(pick, remove);
+    return row;
+  }));
+  if (focused) list.querySelector(`[data-scene="${focused}"] .scene-pick`)?.focus({ preventScroll: true });
+  $("scene-save").disabled = !$("scene-name").value.trim();
+  // The menu bar lists the scenes too.
+  const board = JSON.stringify({ scenes: s.scenes.map(({ id, name }) => ({ id, name })), active });
+  if (hasBackend() && board !== publishedScenes) {
+    publishedScenes = board;
+    invoke("publish_scenes", { board: JSON.parse(board) }).catch(() => {});
+  }
+}
+
+function applyScene(id) {
+  const scene = store.get().scenes.find((s) => s.id === id);
+  if (!scene) return;
+  const patch = scenePatch(scene);
+  // A Replace picture that is no longer there falls back to the studio backdrop.
+  if (patch.background.preset === "custom" && !store.get().background.custom) patch.background.preset = "studio";
+  store.set(patch);
+}
+
+function bindShowAndTell() {
+  $("show-and-tell").addEventListener("change", (event) => store.set({ showAndTell: event.target.checked }));
+}
+
+function bindScenes() {
+  const name = $("scene-name");
+  name.addEventListener("input", () => { $("scene-save").disabled = !name.value.trim(); });
+  $("scene-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!name.value.trim()) return;
+    store.set({ scenes: addScene(store.get().scenes, name.value, store.get()) });
+    name.value = "";
+    $("scene-save").disabled = true;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (!event.metaKey || event.altKey || event.ctrlKey || !/^[1-9]$/.test(event.key)) return;
+    const scene = store.get().scenes[Number(event.key) - 1];
+    if (!scene) return;
+    event.preventDefault();
+    applyScene(scene.id);
+  });
+  if (hasBackend()) listen("apply-scene", (event) => applyScene(event.payload));
+}
+
+// ---------------------------------------------------------------------------
+// Be right back
+// ---------------------------------------------------------------------------
+
+function showAway(on) {
+  away = !!on;
+  engine?.setAway(away, awayCard);
+  render();
+}
+
+function setAway(on) {
+  if (!hasBackend()) return showAway(on);
+  invoke("set_away", { away: on }).then(showAway).catch(() => {});
+}
+
+function bindAway() {
+  $("away-button").addEventListener("click", () => setAway(!away));
+  $("away-back").addEventListener("click", () => setAway(false));
+  if (!hasBackend()) return;
+  listen("away-changed", (event) => showAway(event.payload));
+  invoke("away").then(showAway).catch(() => {});
+  // The meeting camera draws the same card.
+  awayCard.toBlob(async (blob) => {
+    if (!blob) return;
+    try { await invoke("set_away_card", new Uint8Array(await blob.arrayBuffer())); } catch { /* the card is optional */ }
+  }, "image/png");
+}
+
+// ---------------------------------------------------------------------------
 // Settings pages: the first page holds Background; the rest are one step in
 // ---------------------------------------------------------------------------
 
@@ -532,12 +756,14 @@ function go(name) {
   pageStack.lastLeft = null;
   showPage(name, "forward");
   if (name === "samples") sources?.listSamples();
+  micForPage();
 }
 
 function back() {
   if (pageStack.length < 2) return;
   pageStack.lastLeft = pageStack.pop();
   showPage(currentPage(), "back");
+  micForPage();
 }
 
 function bindPages() {
@@ -745,7 +971,6 @@ const mic = createMic((db, peak) => {
   els.meterPeak.style.left = `calc(${peakLevel * 100}% - 2px)`;
   els.meterPeak.style.opacity = peak > FLOOR_DB + 1 ? "0.8" : "0";
   els.meter.setAttribute("aria-valuenow", String(Math.round(db)));
-  els.miniMeterBar.style.transform = `scaleX(${level})`;
 });
 
 async function refreshMicList(activeId = store.get().mic.deviceId) {
@@ -756,32 +981,48 @@ async function refreshMicList(activeId = store.get().mic.deviceId) {
   }
 }
 
+// The microphone is open only while its page is showing, and never in the background: a
+// meeting app may be using it.
+let micOpen = false;
 let micPending = false;
+const micWanted = () => !windowHidden && currentPage() === "mic";
+
+function micForPage() {
+  if (micWanted()) {
+    if (!micOpen) startMic();
+  } else if (micOpen) {
+    mic.stop();
+    micOpen = false;
+    els.micInfo.textContent = "The microphone is off.";
+  }
+}
+
 async function startMic() {
-  if (windowHidden || micPending) return;
+  if (!micWanted() || micPending) return;
   micPending = true;
   els.mic.disabled = true;
-  els.noise.disabled = true;
   els.micInfo.textContent = "Opening microphone…";
-  els.micSummary.textContent = "Opening microphone…";
   els.mic.replaceChildren(new Option("Opening microphone…", ""));
   els.micFix.hidden = true;
   const s = store.get().mic;
-  const result = await mic.start({ deviceId: s.deviceId, noise: s.noise });
+  const result = await mic.start({ deviceId: s.deviceId });
   micPending = false;
-  if (windowHidden) {
+  if (!micWanted()) {
+    // The page closed while the microphone was opening: let go of it straight away.
     mic.stop();
+    micOpen = false;
     return;
   }
-  els.noise.disabled = false;
   if (!result.ok) {
+    micOpen = false;
     els.micInfo.textContent = result.problem.text;
     els.micSummary.textContent = result.problem.text;
     els.micFix.hidden = !(result.problem.kind === "denied" && hasBackend());
     await refreshMicList("").catch(() => {});
     return;
   }
-  els.micInfo.textContent = s.noise ? "Background noise is reduced." : "Noise reduction is off.";
+  micOpen = true;
+  els.micInfo.textContent = "Speak to see the level.";
   await refreshMicList(result.deviceId).catch(() => {});
   els.micSummary.textContent = els.mic.selectedOptions[0]?.textContent || "Microphone";
   if (result.deviceId && result.deviceId !== s.deviceId) {
@@ -792,10 +1033,8 @@ async function startMic() {
 function bindMic() {
   els.mic.addEventListener("change", () => {
     store.set({ mic: { deviceId: els.mic.value } });
-    startMic();
-  });
-  els.noise.addEventListener("change", () => {
-    store.set({ mic: { noise: els.noise.checked } });
+    mic.stop();
+    micOpen = false;
     startMic();
   });
   els.micFix.addEventListener("click", () => invoke("open_privacy_settings", { kind: "microphone" }).catch(() => {}));
@@ -816,6 +1055,11 @@ async function startEngine() {
     return false;
   }
   els.frame.style.setProperty("--ar", String(OUTPUT.width / OUTPUT.height));
+  engine.on("framing", (framing) => {
+    autoZoom = framing.zoom;
+    if (autoOn(store.get())) renderZoom(autoZoom, true);
+    $("show-chip").hidden = !engine.showing();
+  });
   engine.on("status", (status) => {
     nativeQualityAvailable = status.matting === "native";
     render();
@@ -928,7 +1172,7 @@ function rest() {
   sources?.select("camera");
   engine?.stop();
   camera.stop();
-  mic.stop();
+  micForPage();
 }
 
 function wake() {
@@ -936,7 +1180,7 @@ function wake() {
   windowHidden = false;
   engine?.start();
   startCamera();
-  startMic();
+  micForPage();
 }
 
 async function init() {
@@ -945,6 +1189,9 @@ async function init() {
   bindBackground();
   bindCamera();
   bindMic();
+  bindAppearance();
+  bindScenes();
+  bindShowAndTell();
   bindPages();
   bindCameraMenu();
 
@@ -960,19 +1207,20 @@ async function init() {
   }
 
   if (hasBackend()) {
+    autoAvailable = await invoke("faces_available").catch(() => false);
     windowHidden = !(await invoke("window_visible").catch(() => true));
     listen("window-visibility", (event) => (event.payload ? wake() : rest()));
     listen("open-settings", () => go("settings"));
   }
 
   const ready = await startEngine();
+  bindAway();
   if (windowHidden) engine?.stop();
   render();
   if (ready && !windowHidden) {
-    // The only things the app asks for on its own: the camera, then the microphone. The
-    // system shows its own question for each, once.
+    // The only thing the app asks for on its own is the camera. The microphone waits until
+    // its page is opened.
     await startCamera();
-    await startMic();
   }
 
   createMeetings({

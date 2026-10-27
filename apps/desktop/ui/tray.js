@@ -50,6 +50,38 @@ $("setup").addEventListener("click", (event) => {
 });
 $("quit").addEventListener("click", () => invoke("quit_app"));
 
+// Be right back: meetings see a card instead of you, also with ⌃⌥B anywhere.
+const away = $("away"), awayModule = $("away-module");
+function showAway(on) {
+  away.checked = !!on;
+  awayModule.classList.toggle("on", !!on);
+  $("away-text").textContent = on ? "On · meetings see the card" : "Show a card instead of you · ⌃⌥B";
+}
+away.addEventListener("change", () => invoke("set_away", { away: away.checked }).then(showAway).catch(() => {}));
+invoke("away").then(showAway).catch(() => {});
+listen("away-changed", (event) => showAway(event.payload));
+
+// Scenes saved in the window; a click applies one.
+function showScenes(board) {
+  const scenes = board?.scenes || [];
+  $("scenes").hidden = scenes.length === 0;
+  $("scene-items").replaceChildren(...scenes.map((scene, index) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "scene";
+    item.setAttribute("role", "menuitemradio");
+    item.setAttribute("aria-checked", String(scene.id === board.active));
+    item.innerHTML = '<span class="check" aria-hidden="true"></span><span></span><kbd></kbd>';
+    item.querySelector(".check").textContent = scene.id === board.active ? "✓" : "";
+    item.children[1].textContent = scene.name;
+    item.querySelector("kbd").textContent = index < 9 ? `⌘${index + 1}` : "";
+    item.addEventListener("click", () => invoke("apply_scene", { id: scene.id }));
+    return item;
+  }));
+}
+invoke("scene_board").then(showScenes).catch(() => {});
+listen("scenes-changed", (event) => showScenes(event.payload));
+
 // A downloaded update: one click installs it and starts the new version.
 const update = $("update");
 function showUpdate(status) {
@@ -64,6 +96,10 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") invoke("hide_menu_panel");
   if (event.metaKey && event.key === ",") { event.preventDefault(); invoke("open_settings"); }
   if (event.metaKey && event.key.toLowerCase() === "q") { event.preventDefault(); invoke("quit_app"); }
+  if (event.metaKey && /^[1-9]$/.test(event.key)) {
+    const item = $("scene-items").children[Number(event.key) - 1];
+    if (item) { event.preventDefault(); item.click(); }
+  }
 });
 
 // The window is as tall as its content, whatever the system font measures.

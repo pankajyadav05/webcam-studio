@@ -9,7 +9,7 @@ use studio_core::settings::{BackgroundMode, Settings};
 use studio_engine::Engine;
 
 use crate::extension::ExtensionTracker;
-use crate::image_load::{decode_background, load_background};
+use crate::image_load::{decode_background, decode_overlay, load_background};
 use crate::pipeline::Pipeline;
 use crate::vcam::{self, Facts, UNSUPPORTED_MESSAGE, VcamStatus};
 
@@ -144,6 +144,22 @@ impl AppState {
         Ok(())
     }
 
+    /// Turns Be right back on or off for the meeting camera.
+    pub fn set_away(&self, away: bool) {
+        self.engine().set_away(away);
+    }
+
+    pub fn is_away(&self) -> bool {
+        self.engine().is_away()
+    }
+
+    /// The card the window drew for Be right back (a PNG with transparency).
+    pub fn set_away_card(&self, bytes: &[u8]) -> Result<(), String> {
+        let card = decode_overlay(bytes)?;
+        self.engine().set_away_card(Some(card));
+        Ok(())
+    }
+
     /// Returns the operating system and camera backend names.
     pub fn platform_info(&self) -> PlatformInfo {
         PlatformInfo {
@@ -272,6 +288,7 @@ mod tests {
                 pan_y: -0.5,
                 mirror: true,
                 auto_frame: false,
+                show_and_tell: false,
             },
             background: BackgroundMode::Blur { radius: 12 },
             noise: NoiseMode::Light,

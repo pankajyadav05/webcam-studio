@@ -54,6 +54,25 @@ pub fn decode_background(bytes: &[u8]) -> Result<VideoFrame, String> {
     Ok(to_frame(&picture))
 }
 
+/// Decodes a PNG with transparency for drawing on top of the picture: BGRA with the colour
+/// premultiplied by alpha, and the alpha kept.
+pub fn decode_overlay(bytes: &[u8]) -> Result<VideoFrame, String> {
+    if bytes.is_empty() || bytes.len() > 16 * 1024 * 1024 {
+        return Err("The card picture is empty or too large.".to_string());
+    }
+    let picture = image::load_from_memory(bytes)
+        .map_err(|e| format!("Could not read the card picture: {}", decode_reason(&e)))?;
+    let mut frame = to_frame(&picture);
+    for (px, src) in frame
+        .data
+        .chunks_exact_mut(4)
+        .zip(picture.to_rgba8().as_raw().chunks_exact(4))
+    {
+        px[3] = src[3];
+    }
+    Ok(frame)
+}
+
 fn io_reason(error: &std::io::Error) -> String {
     match error.kind() {
         std::io::ErrorKind::NotFound => "the file was not found.".to_string(),

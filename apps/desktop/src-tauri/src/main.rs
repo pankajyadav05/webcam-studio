@@ -5,8 +5,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod auto_camera;
+mod away;
 mod background;
 mod extension;
+mod faces;
 mod image_load;
 mod logfile;
 mod pipeline;
@@ -169,6 +171,9 @@ fn main() {
     tauri::Builder::default()
         .manage(AppState::new())
         .manage(segmentation::Segmentation::new())
+        .manage(faces::Faces::new())
+        .manage(away::Scenes::default())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(samples::Samples::default())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -182,6 +187,7 @@ fn main() {
             app.manage(auto_camera::MeetingSwitch::load(switch));
             window::setup(app)?;
             background::setup_tray(app)?;
+            away::register_shortcut(app);
             auto_camera::spawn(app.handle().clone());
             Ok(())
         })
@@ -192,6 +198,15 @@ fn main() {
             samples::sample_manifest,
             samples::sample_clip,
             segmentation::segment_person,
+            faces::detect_faces,
+            faces::faces_available,
+            away::away,
+            away::set_away,
+            away::toggle_away,
+            away::set_away_card,
+            away::publish_scenes,
+            away::scene_board,
+            away::apply_scene,
             segmentation::segmenter_info,
             segmentation::segmentation_diagnostics,
             get_settings,

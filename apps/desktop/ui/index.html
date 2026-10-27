@@ -14,6 +14,9 @@
         <span>Webcam Studio</span>
       </div>
       <div class="window-actions">
+        <button class="icon-btn away-button" id="away-button" type="button" aria-pressed="false" aria-label="Be right back" title="Be right back (⌃⌥B)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M10 9v6M14 9v6"/></svg>
+        </button>
         <button class="icon-btn" id="settings-button" type="button" aria-label="Settings" title="Settings (⌘,)">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.4A7.5 7.5 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.5 7.5 0 0 0 2.6 1.5l.4 2.4h4l.4-2.4a7.5 7.5 0 0 0 2.6-1.5l2.4.9 2-3.4z"/></svg>
         </button>
@@ -38,6 +41,12 @@
                 <button type="button" id="use-camera">Use camera</button>
               </span>
               <span class="chip" id="zoom-chip" hidden>1.0×</span>
+              <span class="chip" id="auto-chip" hidden>Auto-frame</span>
+              <span class="chip" id="show-chip" hidden>Showing</span>
+              <span class="chip source-badge" id="away-chip" hidden>
+                <span>Be right back · meetings see this card</span>
+                <button type="button" id="away-back">I'm back</button>
+              </span>
               <span class="chip busy" id="effect-chip" hidden>
                 <i class="spinner" aria-hidden="true"></i><span>Preparing background…</span>
               </span>
@@ -82,6 +91,10 @@
             <output class="readout" id="zoom-readout" for="zoom">1.0×</output>
           </div>
           <span class="divider" aria-hidden="true"></span>
+          <button class="tool" id="auto-frame" type="button" aria-label="Auto-frame" aria-pressed="false" title="Keep you framed and in the middle (F)" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H6a2 2 0 0 0-2 2v2m12-4h2a2 2 0 0 1 2 2v2M4 16v2a2 2 0 0 0 2 2h2m8 0h2a2 2 0 0 0 2-2v-2"/><circle cx="12" cy="10" r="2.6"/><path d="M7.8 17a4.3 4.3 0 0 1 8.4 0"/></svg>
+            <span>Auto-frame</span>
+          </button>
           <button class="tool" id="mirror" type="button" aria-label="Mirror" aria-pressed="false" title="Flip the picture left to right (M)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16"/><path d="M8.5 7.5 3.5 18h5zM15.5 7.5l5 10.5h-5z"/></svg>
             <span>Mirror</span>
@@ -122,12 +135,32 @@
             <p class="problem" id="effect-problem" hidden role="alert"></p>
           </div>
 
+          <div id="smart-camera" hidden>
+            <h2 class="section-title" id="h-smart">Smart camera</h2>
+            <div class="group" role="group" aria-labelledby="h-smart">
+              <label class="row static">
+                <span class="row-icon" style="--tint:#e0a33a" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="8" y="3.5" width="8" height="10" rx="1.5"/><path d="M5 13.5c0 4 3 7 7 7s7-3 7-7"/></svg></span>
+                <span class="row-text"><b>Show-and-tell</b><small id="show-hint">Hold something up to zoom in</small></span>
+                <input class="switch" id="show-and-tell" type="checkbox" role="switch" aria-describedby="show-hint" />
+              </label>
+            </div>
+          </div>
+
           <h2 class="section-title">Settings</h2>
           <div class="group">
+            <button class="row" type="button" data-go="appearance">
+              <span class="row-icon" style="--tint:#c86fd6" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7L4.5 10.9 10.1 9z"/><path d="M18.5 15.5v4M16.5 17.5h4"/></svg></span>
+              <span class="row-text"><b>Appearance</b><small id="appearance-summary">Off</small></span>
+              <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+            <button class="row" type="button" data-go="scenes">
+              <span class="row-icon" style="--tint:#4b7be5" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="13" height="11" rx="2"/><path d="M7.5 3.5h11a2 2 0 0 1 2 2v9"/></svg></span>
+              <span class="row-text"><b>Scenes</b><small id="scenes-summary">None saved</small></span>
+              <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
             <button class="row" type="button" data-go="mic">
               <span class="row-icon" style="--tint:#e5645c" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span>
-              <span class="row-text"><b>Microphone</b><small id="mic-summary">Waiting for the microphone</small></span>
-              <span class="mini-meter" aria-hidden="true"><i id="mini-meter-bar"></i></span>
+              <span class="row-text"><b>Microphone</b><small id="mic-summary">Check your level</small></span>
               <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
             </button>
             <button class="row" type="button" data-go="samples">
@@ -178,12 +211,48 @@
             <p class="hint" id="mic-info">Waiting for the microphone</p>
             <button class="btn" id="mic-fix" type="button" hidden>Open System Settings</button>
           </div>
+          <p class="footnote">This page only shows the level. The microphone is on only while this page is open, and meeting apps keep their own sound.</p>
+        </section>
+
+        <section class="page" data-page="scenes" aria-labelledby="h-scenes" hidden>
+          <button class="back" type="button" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Studio</button>
+          <h1 class="page-title" id="h-scenes" tabindex="-1">Scenes</h1>
+          <p class="footnote lead">A scene keeps your background, appearance and auto-frame. Switch here, from the menu bar, or with ⌘1 to ⌘9.</p>
+          <div class="group" id="scene-list" role="radiogroup" aria-label="Scenes"></div>
+          <h2 class="section-title">Save this look</h2>
+          <form class="group padded scene-save" id="scene-form">
+            <input id="scene-name" class="text-input" type="text" maxlength="40" autocomplete="off" placeholder="Name, such as Client call" aria-label="Scene name" aria-describedby="scene-now" />
+            <button class="btn primary" type="submit" id="scene-save" disabled>Save</button>
+          </form>
+          <p class="footnote" id="scene-now">Now: Plain camera</p>
+        </section>
+
+        <section class="page" data-page="appearance" aria-labelledby="h-appearance" hidden>
+          <button class="back" type="button" data-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>Studio</button>
+          <h1 class="page-title" id="h-appearance" tabindex="-1">Appearance</h1>
           <div class="group">
+            <div class="field row-field">
+              <div class="field-head"><label for="touch-up">Touch up</label><output class="readout" id="touch-up-readout" for="touch-up">Off</output></div>
+              <input id="touch-up" class="slider" type="range" min="0" max="100" step="1" value="0" aria-describedby="touch-up-hint" />
+              <div class="range-ends" id="touch-up-hint"><span>Off</span><span>Smoother skin</span></div>
+            </div>
+            <div class="field row-field" id="studio-light-field" hidden>
+              <div class="field-head"><label for="studio-light">Studio Light</label><output class="readout" id="studio-light-readout" for="studio-light">Off</output></div>
+              <input id="studio-light" class="slider" type="range" min="0" max="100" step="1" value="0" aria-describedby="studio-light-hint" />
+              <div class="range-ends" id="studio-light-hint"><span>Off</span><span>Lit face, darker room</span></div>
+            </div>
             <label class="row static">
-              <span class="row-text"><b>Reduce background noise</b><small>Fans, typing and traffic</small></span>
-              <input class="switch" id="noise" type="checkbox" role="switch" checked disabled />
+              <span class="row-text"><b>Adjust for low light</b><small id="low-light-hint">Brightens a dark room</small></span>
+              <input class="switch" id="low-light" type="checkbox" role="switch" aria-describedby="low-light-hint" />
             </label>
+            <div class="field row-field">
+              <div class="field-head"><label for="warmth">Warmth</label><output class="readout" id="warmth-readout" for="warmth">0</output></div>
+              <input id="warmth" class="slider bipolar" type="range" min="-100" max="100" step="1" value="0" aria-describedby="warmth-hint" />
+              <div class="range-ends" id="warmth-hint"><span>Cooler</span><span>Warmer</span></div>
+            </div>
           </div>
+          <p class="footnote">Meetings that use Webcam Studio Camera get the same look. Touch up smooths only skin, and keeps eyes, hair and edges sharp. Studio Light follows your face.</p>
+          <button id="reset-appearance" class="text-btn" type="button">Reset to defaults</button>
         </section>
 
         <section class="page" data-page="samples" aria-labelledby="h-samples" hidden>

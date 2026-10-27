@@ -1,4 +1,8 @@
-// The microphone: a live level, and the browser's own noise reduction when asked.
+// The microphone level, to check it works. Only for the meter: the sound goes nowhere.
+//
+// It is opened raw, with no echo cancellation, noise suppression or gain control. With any of
+// those on, macOS starts voice processing for this app, which can turn down or take over the
+// microphone of a meeting app that is running at the same time.
 
 const FLOOR_DB = -60;
 const PEAK_HOLD_MS = 1200;
@@ -59,11 +63,11 @@ export function createMic(onLevel) {
     onLevel(db, peak);
   }
 
-  async function start({ deviceId, noise }) {
+  async function start({ deviceId }) {
     stop();
     const audio = {
-      noiseSuppression: noise,
-      echoCancellation: noise,
+      noiseSuppression: false,
+      echoCancellation: false,
       autoGainControl: false,
       ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     };
@@ -72,7 +76,7 @@ export function createMic(onLevel) {
     } catch (err) {
       // A microphone that was unplugged: fall back to the default one.
       if (deviceId && (err.name === "OverconstrainedError" || err.name === "NotFoundError")) {
-        return start({ deviceId: "", noise });
+        return start({ deviceId: "" });
       }
       return { ok: false, problem: describeMicError(err) };
     }

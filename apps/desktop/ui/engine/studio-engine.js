@@ -26,6 +26,9 @@ import { createMatteFilter } from './matte.js';
 import { createCompositor } from './compositor.js';
 import { NativeProvider, nativeInvoke } from './providers/native.js';
 import { MediaPipeProvider } from './providers/mediapipe.js';
+import { createAutoFramer } from './autoframe.js';
+import { createShowTell } from './showtell.js';
+import { normalizeAppearance, isLookActive, lookParams, createLightMeter, createStudioLight, spotInOutput } from './look.js';
 
 const percentile = (values, fraction) => {
   if (!values.length) return 0;
@@ -44,6 +47,31 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
   let lastMediaTime = -1, displayed = null, inFlight = false, nativeFailed = false;
   let filter, filterShape = '', filterTime = null, firstMaskAt = 0;
   let diagnostics = false, lastDiagnostics = 0, api;
+  // Touch-ups and auto-frame.
+  let appearance = normalizeAppearance(), light = createLightMeter(), lightCanvas = null, lightFrames = 0;
+  let autoOn = false, autoFraming = null, faceAsk = 0, faceBusy = false, faceCanvas = null, lastFramingEmit = 0;
+  const framer = createAutoFramer(), framingListeners = new Set();
+  const studio = createStudioLight();
+  let studioState = null;
+  // Show-and-tell: zoom in on something held up to the camera (showtell.js).
+  let showOn = false;
+  const show = createShowTell();
+  const wantsFaces = () => autoOn || showOn || appearance.studio_light > 0.001;
+  // Be right back: a blurred, darker still of the last picture with the card on top
+  // (crates/engine/src/away.rs). The live camera is not drawn while away.
+  let away = false, awayCard = null, awayStill = null;
+  function paintAway() {
+    if (!awayStill) {
+      awayStill = document.createElement('canvas'); awayStill.width = width; awayStill.height = height;
+      const small = document.createElement('canvas'); small.width = 48; small.height = Math.max(1, Math.round(48*height/width));
+      const sc = small.getContext('2d'); sc.imageSmoothingQuality = 'high'; sc.drawImage(canvas,0,0,small.width,small.height);
+      const c = awayStill.getContext('2d'); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+      c.drawImage(small,0,0,width,height);
+      c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(0,0,width,height);
+    }
+    ctx.drawImage(awayStill,0,0,width,height);
+    if (awayCard) ctx.drawImage(awayCard,0,0,width,height);
+  }
   let alignmentDrops = 0, submitted = 0, received = 0, lastLatency = 0, lastSubmittedId = 0;
   let status = { state:'idle', backend:null, matting:null, message:'Background effects are off.' };
   const listeners = new Set(), ring = new FrameRing(), clock = new MediaClock(), pool = [];
@@ -51,6 +79,7 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
   const sourceEvents = ['loadeddata','resize','emptied','ended'];
   const now = () => performance.now();
   const effective = () => background.mode !== 'none';
+  const looking = () => isLookActive(appearance);
   const valid = () => video?.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0;
   function emit(state, message) {
     status = { state, message, backend:provider?.backend || null, matting:provider?.name || null };
@@ -103,7 +132,66 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
         'Native segmentation unavailable; using offline MediaPipe fallback.');
     } finally { if (token === selection) choosing = false; }
   }
-  function getCrop() { return cropRect(video?.videoWidth || 0,video?.videoHeight || 0,width,height,framing); }
+  const framingInUse = () => autoFraming || framing;
+  function getCrop() { return cropRect(video?.videoWidth || 0,video?.videoHeight || 0,width,height,framingInUse()); }
+  // How bright the shown picture is, for low light; a tiny copy every third frame.
+  function measureLight(image, timestamp) {
+    if (!appearance.low_light) { light.reset(); return; }
+    if (lightFrames++ % 3) return;
+    try {
+      if (!lightCanvas) { lightCanvas = document.createElement('canvas'); lightCanvas.width = 16; lightCanvas.height = 9; }
+      const c = lightCanvas.getContext('2d', { willReadFrequently:true });
+      c.drawImage(image,0,0,16,9);
+      const data = c.getImageData(0,0,16,9).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) sum += .299*data[i] + .587*data[i+1] + .114*data[i+2];
+      light.update(sum / (data.length/4) / 255, timestamp/1000);
+    } catch (error) { console.warn('Brightness check failed', error); }
+  }
+  // Faces for auto-frame, about eight times a second, from a small copy of the whole picture.
+  function askFaces(timestamp) {
+    if (faceBusy || timestamp - faceAsk < 120 || !valid()) return;
+    faceBusy = true; faceAsk = timestamp;
+    const vw = video.videoWidth, vh = video.videoHeight, scale = Math.min(1, 640/vw);
+    faceCanvas ||= document.createElement('canvas');
+    faceCanvas.width = Math.round(vw*scale); faceCanvas.height = Math.round(vh*scale);
+    faceCanvas.getContext('2d').drawImage(video,0,0,faceCanvas.width,faceCanvas.height);
+    const asked = selection;
+    new Promise((resolve, reject) => faceCanvas.toBlob(b => b ? resolve(b) : reject(new Error('No picture')), 'image/jpeg', .8))
+      .then(blob => blob.arrayBuffer())
+      .then(bytes => invoke('detect_faces', new Uint8Array(bytes), { headers: { want: showOn ? 'hands' : '' } }))
+      .then(seen => {
+        if (asked !== selection) return;
+        const faces = seen?.faces || [];
+        if (showOn) show.observe(seen?.hands || [], faces, now()/1000);
+        if (autoOn) framer.observe(faces, [vw,vh], [width,height], now()/1000);
+        if (appearance.studio_light > 0.001) studio.observe(faces, vw/vh, now()/1000);
+      })
+      .catch(error => { if (!String(error).includes('busy')) console.warn('Face search failed', error); })
+      .finally(() => { faceBusy = false; });
+  }
+  // Studio Light's spot in output pixels, for the frame shown now.
+  function studioSpot() {
+    if (!studioState || !valid()) return null;
+    return { spot: spotInOutput(studioState.spot,[video.videoWidth,video.videoHeight],getCrop(),[width,height],framingInUse().mirror),
+      presence: studioState.presence };
+  }
+  function stepAutoFrame(timestamp) {
+    if (!valid()) return;
+    if (wantsFaces()) askFaces(timestamp);
+    studioState = appearance.studio_light > 0.001 ? studio.step(timestamp/1000) : (studio.reset(), null);
+    const focus = showOn ? show.focus() : null;
+    framer.setAim(autoOn, focus);
+    if (!autoOn && !focus && !framer.busy()) { framer.reset(); autoFraming = null; return; }
+    // Once Show-and-tell hands back, the framer returns the manual framing itself and stops.
+    const next = framer.step(framing,[video.videoWidth,video.videoHeight],[width,height],timestamp/1000);
+    autoFraming = autoOn || framer.busy() ? next : null;
+    if (!autoFraming) return;
+    if (timestamp - lastFramingEmit > 100) {
+      lastFramingEmit = timestamp;
+      for (const cb of framingListeners) { try { cb({ ...autoFraming }); } catch (error) { console.error(error); } }
+    }
+  }
   function capture(mediaTime, timestamp) {
     const c = getCrop();
     // Give the model context around a zoomed crop instead of magnifying a full-frame mask.
@@ -151,7 +239,7 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
       } });
       const result = compositor.draw({ image:frame.image, frameKey:frame.id, crop:frame.crop, mirror:frame.mirror,
         mask, background, width, height, fade:mask ? Math.min(1,(timestamp-firstMaskAt)/120) : 0,
-        alphaOnly:view === 'mask', tuning });
+        alphaOnly:view === 'mask', tuning, look: looking() ? lookParams(appearance, light.gain, studioSpot()) : null });
       ctx.drawImage(result,0,0);
       samples.renders.push(now()-start); samples.paints.push(timestamp);
       if (mask) {
@@ -171,7 +259,7 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
     if (animation !== null || !running || disposed || document.hidden) return;
     animation = requestAnimationFrame(timestamp => {
       animation = null;
-      if (displayed && effective()) {
+      if (displayed && (effective() || looking())) {
         paint(displayed.frame,displayed.mask,timestamp);
         if (timestamp-firstMaskAt < 120) schedulePaint();
       }
@@ -230,12 +318,20 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
   function onFrame(timestamp, metadata = {}) {
     frameCallback = null;
     if (!running || disposed || document.hidden) return;
+    if (away) { paintAway(); watch(); return; }
     try {
     const mediaTime = valid() ? clock.advance(timestamp,metadata,video.currentTime) : null;
     if (valid() && mediaTime !== null) {
       const previousTime = lastMediaTime; lastMediaTime = mediaTime;
       if (previousTime >= 0 && mediaTime > previousTime) ring.frameMs = (mediaTime-previousTime)*1000;
-      if (!effective()) {
+      stepAutoFrame(timestamp);
+      if (!effective() && looking()) {
+        // Touch-ups without a background effect: the compositor, with no mask.
+        const frame = capture(mediaTime,timestamp);
+        measureLight(frame.image,timestamp);
+        displayed = { frame, mask:null };
+        paint(frame,null,timestamp);
+      } else if (!effective()) {
         const c = getCrop(); ctx.save();
         if (framing.mirror) { ctx.translate(width,0); ctx.scale(-1,1); }
         ctx.drawImage(video,c.x,c.y,c.width,c.height,0,0,width,height); ctx.restore();
@@ -244,6 +340,7 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
       } else {
         ensureProvider();
         const frame = capture(mediaTime,timestamp);
+        measureLight(frame.image,timestamp);
         if (provider?.ready && !inFlight) segment(frame);
         if (!displayed) paint(frame,null,timestamp);
       }
@@ -286,14 +383,45 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
       if (disposed || source === video) return;
       cancel();
       for (const event of sourceEvents) video?.removeEventListener(event,sourceChanged);
-      video = source; reset();
+      video = source; reset(); framer.reset(); studio.reset(); autoFraming = null;
       for (const event of sourceEvents) video?.addEventListener(event,sourceChanged);
       watch(); ensureProvider();
     },
+    // With `auto` on, zoom and pan are only where auto-frame starts from.
     setFraming(value = {}) {
       const next = { zoom:clamp(value.zoom,1,4,1), pan_x:clamp(value.pan_x,-1,1,0),
         pan_y:clamp(value.pan_y,-1,1,0), mirror:!!value.mirror };
+      const auto = !!value.auto, mirrored = next.mirror !== framing.mirror;
+      if (auto !== autoOn) {
+        // Taking over from auto-frame at the framing it reached is not a jump; keep the mask.
+        const near = autoFraming && ['zoom','pan_x','pan_y'].every(k => Math.abs(autoFraming[k]-next[k]) < 0.02);
+        autoOn = auto; framer.reset(); autoFraming = null; framing = next;
+        if (mirrored || (!auto && !near)) reset();
+        return;
+      }
+      if (auto) { framing = next; if (mirrored) reset(); return; }
       if (JSON.stringify(next) !== JSON.stringify(framing)) { framing = next; reset(); }
+    },
+    getFraming() { return { ...framingInUse() }; },
+    setShowAndTell(on) {
+      showOn = !!on;
+      if (!showOn) show.reset();
+    },
+    showing: () => showOn && !!show.focus(),
+    // `card` is a transparent canvas or image at the output size, drawn on the still.
+    setAway(on, card = awayCard) {
+      awayCard = card || null;
+      if (!!on === away) { if (away) paintAway(); return; }
+      away = !!on; awayStill = null;
+      if (away) paintAway(); else { reset(); watch(); }
+    },
+    setAppearance(value = {}) {
+      const next = normalizeAppearance(value);
+      if (!next.low_light) light.reset();
+      const was = looking();
+      appearance = next;
+      if (was && !looking() && !effective()) displayed = null;
+      schedulePaint();
     },
     setBackground(value = {}) {
       const mode = ['none','blur','replace'].includes(value.mode) ? value.mode : 'none';
@@ -325,6 +453,7 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
     stop() { running = false; cancel(); closeProvider(); reset(); },
     getCrop,
     on(event,callback) {
+      if (event === 'framing' && typeof callback === 'function') { framingListeners.add(callback); return () => framingListeners.delete(callback); }
       if (event !== 'status' || typeof callback !== 'function') return () => {};
       listeners.add(callback); callback({...status}); return () => listeners.delete(callback);
     },
@@ -346,7 +475,7 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
       running = false; cancel(); closeProvider(); reset(); disposed = true;
       document.removeEventListener('visibilitychange',visibility);
       for (const event of sourceEvents) video?.removeEventListener(event,sourceChanged);
-      compositor?.dispose(); listeners.clear(); pool.length = 0; video = null;
+      compositor?.dispose(); listeners.clear(); framingListeners.clear(); pool.length = 0; video = null;
     },
   };
   return api;

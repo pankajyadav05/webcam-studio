@@ -18,13 +18,19 @@ use studio_capture::CameraCapture;
 use studio_core::device::{OutputFormat, VirtualCamera};
 use studio_core::error::Result as StudioResult;
 use studio_engine::Engine;
-use studio_segmentation::{PersonSegmenter, Quality, VisionSegmenter};
+use studio_segmentation::{
+    FaceDetector, PersonSegmenter, Quality, VisionFaceDetector, VisionSegmenter,
+};
 use studio_vdevice_macos::{OUTPUT_FPS, OUTPUT_HEIGHT, OUTPUT_WIDTH};
 
 use crate::vcam::describe;
 
 /// The name meeting apps show for the virtual camera.
 pub const VIRTUAL_CAMERA_NAME: &str = "Webcam Studio Camera";
+
+/// With auto-frame or Studio Light on, faces are looked for in every this many frames (10
+/// times a second).
+const FACE_EVERY: u32 = 3;
 
 /// Pushes that fail this many times in a row end the run.
 const MAX_FAILURES_IN_A_ROW: u32 = 30;
@@ -104,6 +110,12 @@ pub trait Devices: Send + Sync + 'static {
     fn person_model(&self) -> Result<Box<dyn PersonSegmenter>, String> {
         VisionSegmenter::new()
             .map(|vision| Box::new(vision) as Box<dyn PersonSegmenter>)
+            .map_err(|e| e.to_string())
+    }
+    /// The face finder for auto-frame. Called on the worker thread, which it stays on.
+    fn face_detector(&self) -> Result<Box<dyn FaceDetector>, String> {
+        VisionFaceDetector::new()
+            .map(|vision| Box::new(vision) as Box<dyn FaceDetector>)
             .map_err(|e| e.to_string())
     }
 }
@@ -509,6 +521,8 @@ impl Job {
             }
         };
         let mut model_errors = 0u32;
+        let mut faces = None;
+        let (mut frame_number, mut face_errors) = (0u32, 0u32);
         log::info!(
             "Virtual camera running; person model: {}",
             if person.is_some() {
@@ -531,8 +545,42 @@ impl Job {
                 }
             };
 
+            frame_number = frame_number.wrapping_add(1);
+            let wants = self
+                .engine
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .wants();
+            // Eye contact needs the eyes in every picture; the rest a few times a second.
+            let due = wants.is_some_and(|w| w.eyes || frame_number % FACE_EVERY == 0);
+            // Vision runs outside the engine lock, so the window's changes never wait.
+            let found = if let (true, Some(want)) = (due, wants) {
+                if faces.is_none() {
+                    faces = Some(self.devices.face_detector().map_err(|e| {
+                        log::warn!("No face finder for auto-frame: {e}");
+                    }));
+                }
+                match faces.as_mut() {
+                    Some(Ok(detector)) => detector
+                        .detect_frame(&frame, want)
+                        .map_err(|e| {
+                            face_errors += 1;
+                            if face_errors.is_power_of_two() {
+                                log::warn!("Face search failed ({face_errors} so far): {e}");
+                            }
+                        })
+                        .ok(),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
             let output = {
                 let mut engine = self.engine.lock().unwrap_or_else(PoisonError::into_inner);
+                if let Some(found) = &found {
+                    engine.observe(found, frame.width, frame.height, frame.timestamp_us);
+                }
                 let settings = engine.settings();
                 if let Some(problem) = size_problem(settings.output_width, settings.output_height) {
                     return Err(problem);
@@ -781,6 +829,9 @@ mod tests {
         // these tests check.
         fn person_model(&self) -> Result<Box<dyn PersonSegmenter>, String> {
             Err("no model in tests".to_string())
+        }
+        fn face_detector(&self) -> Result<Box<dyn FaceDetector>, String> {
+            Err("no face finder in tests".to_string())
         }
     }
 

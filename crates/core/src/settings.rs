@@ -48,6 +48,8 @@ pub struct Framing {
     pub mirror: bool,
     /// Follow the person automatically.
     pub auto_frame: bool,
+    /// Zoom in on something held up to the camera.
+    pub show_and_tell: bool,
 }
 
 impl Default for Framing {
@@ -58,6 +60,7 @@ impl Default for Framing {
             pan_y: 0.0,
             mirror: false,
             auto_frame: false,
+            show_and_tell: false,
         }
     }
 }
@@ -72,6 +75,7 @@ impl Framing {
             pan_y: clamp_or(self.pan_y, -1.0, 1.0, 0.0),
             mirror: self.mirror,
             auto_frame: self.auto_frame,
+            show_and_tell: self.show_and_tell,
         }
     }
 }
@@ -118,6 +122,58 @@ impl Cutout {
     }
 }
 
+/// Touch-ups to the person's look, applied to the camera picture before the background.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Appearance {
+    /// "Touch up": how much skin is smoothed, 0 (off) to 1.
+    pub smoothing: f32,
+    /// Brighten a dark picture automatically.
+    pub low_light: bool,
+    /// Colour temperature, -1 (cooler) to 1 (warmer); 0 leaves the colours alone.
+    pub warmth: f32,
+    /// "Studio Light": lights the face and dims the room around it, 0 (off) to 1.
+    pub studio_light: f32,
+    /// Experimental: lift a downward look (reading the screen) towards the camera. Not
+    /// offered in the app: a landmark warp cannot undo the lowered eyelid convincingly.
+    pub eye_contact: bool,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            smoothing: 0.0,
+            low_light: false,
+            warmth: 0.0,
+            studio_light: 0.0,
+            eye_contact: false,
+        }
+    }
+}
+
+impl Appearance {
+    /// Each value clamped to its range; NaN takes the default.
+    pub fn clamped(self) -> Self {
+        Self {
+            smoothing: clamp_or(self.smoothing, 0.0, 1.0, 0.0),
+            low_light: self.low_light,
+            warmth: clamp_or(self.warmth, -1.0, 1.0, 0.0),
+            studio_light: clamp_or(self.studio_light, 0.0, 1.0, 0.0),
+            eye_contact: self.eye_contact,
+        }
+    }
+
+    /// Whether any touch-up changes the picture.
+    pub fn is_active(&self) -> bool {
+        self.changes_colour() || self.studio_light > 0.001 || self.eye_contact
+    }
+
+    /// Whether smoothing, low light or warmth is on (the steps that need no face).
+    pub fn changes_colour(&self) -> bool {
+        self.smoothing > 0.001 || self.low_light || self.warmth.abs() > 0.001
+    }
+}
+
 /// All settings the pipeline reads.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -136,6 +192,8 @@ pub struct Settings {
     pub output_fps: u32,
     /// How the person is cut out in Blur and Replace.
     pub cutout: Cutout,
+    /// Skin smoothing, low-light correction and warmth.
+    pub appearance: Appearance,
 }
 
 impl Default for Settings {
@@ -148,6 +206,7 @@ impl Default for Settings {
             output_height: 720,
             output_fps: 30,
             cutout: Cutout::default(),
+            appearance: Appearance::default(),
         }
     }
 }
@@ -164,6 +223,7 @@ mod tests {
             pan_y: 2.5,
             mirror: true,
             auto_frame: true,
+            show_and_tell: false,
         };
         let c = framing.clamped();
         assert_eq!(c.zoom, 4.0);
@@ -188,6 +248,7 @@ mod tests {
             pan_y: f32::NAN,
             mirror: false,
             auto_frame: false,
+            show_and_tell: false,
         };
         assert_eq!(framing.clamped(), Framing::default());
     }
@@ -213,6 +274,24 @@ mod tests {
     }
 
     #[test]
+    fn appearance_is_clamped_and_old_settings_have_none() {
+        let a = Appearance {
+            smoothing: 3.0,
+            low_light: true,
+            warmth: f32::NAN,
+            studio_light: 2.0,
+            eye_contact: false,
+        }
+        .clamped();
+        assert_eq!(a.studio_light, 1.0);
+        assert_eq!((a.smoothing, a.warmth), (1.0, 0.0));
+        assert!(a.is_active());
+        let old: Settings = serde_json::from_str(r#"{"output_fps":30}"#).unwrap();
+        assert_eq!(old.appearance, Appearance::default());
+        assert!(!old.appearance.is_active());
+    }
+
+    #[test]
     fn settings_json_round_trip() {
         let settings = Settings {
             framing: Framing {
@@ -221,6 +300,7 @@ mod tests {
                 pan_y: -0.25,
                 mirror: true,
                 auto_frame: false,
+                show_and_tell: true,
             },
             background: BackgroundMode::Replace {
                 image_path: "/tmp/bg.png".to_string(),
@@ -233,6 +313,13 @@ mod tests {
                 cutoff: 0.75,
                 softness: 0.25,
                 steadiness: 1.0,
+            },
+            appearance: Appearance {
+                smoothing: 0.6,
+                low_light: true,
+                warmth: -0.25,
+                studio_light: 0.5,
+                eye_contact: true,
             },
         };
         let json = serde_json::to_string(&settings).unwrap();

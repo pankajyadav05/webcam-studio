@@ -1,18 +1,25 @@
 //! The Webcam Studio processing engine: turns a camera frame into the finished output frame and
 //! cleans microphone audio.
 //!
-//! Video steps, in order: framing (zoom, pan, mirror), then the background effect. Audio goes
+//! Video steps, in order: framing (zoom, pan, mirror, or auto-frame), the touch-ups, then the
+//! background effect. Audio goes
 //! through the denoiser picked by the noise mode. The engine has no threads or devices of its
 //! own; the app calls [`Engine::process_video`] and [`Engine::process_audio`] from its loops.
 
+pub mod appearance;
+pub mod autoframe;
+pub mod away;
 pub mod composite;
+pub mod eyecontact;
 pub mod framing;
 pub mod matte;
+pub mod showtell;
+pub mod studio_light;
 
 use studio_audio::{Denoiser, denoiser_for};
 use studio_core::frame::{AudioChunk, VideoFrame};
 use studio_core::settings::{BackgroundMode, Framing, Settings};
-use studio_segmentation::{FullForegroundSegmenter, Mask, Segmenter};
+use studio_segmentation::{FaceBox, FullForegroundSegmenter, Mask, Segmenter, Sighting, Want};
 
 pub use framing::{CropRect, crop_rect};
 
@@ -33,6 +40,23 @@ pub struct Engine {
     last_mask_us: Option<u64>,
     /// The last finished mask from the model, reused if one mask fails.
     last_mask: Option<Mask>,
+    /// Follows the faces when auto-frame is on.
+    framer: autoframe::AutoFramer,
+    /// The framing used for the last picture (auto-frame's, when it is on).
+    framing_in_use: Framing,
+    /// Skin smoothing, low light and warmth.
+    look: appearance::Look,
+    /// Lights the face when Studio Light is on.
+    light: studio_light::StudioLight,
+    /// Show-and-tell: notices something held up to the camera.
+    show: showtell::ShowTell,
+    /// Eye contact: lifts a downward look.
+    eye_contact: eyecontact::EyeContact,
+    /// Be right back: on, the card drawn by the window, and the still made when it started.
+    away: bool,
+    away_card: Option<VideoFrame>,
+    away_still: Option<VideoFrame>,
+    away_frame: Option<VideoFrame>,
 }
 
 /// Returns the raw person mask for a frame, or `None` if the model failed on it.
@@ -54,6 +78,16 @@ impl Engine {
             matte: matte::MatteFilter::new(),
             last_mask_us: None,
             last_mask: None,
+            framer: autoframe::AutoFramer::new(),
+            framing_in_use: Framing::default(),
+            look: appearance::Look::new(),
+            light: studio_light::StudioLight::new(),
+            show: showtell::ShowTell::new(),
+            eye_contact: eyecontact::EyeContact::new(),
+            away: false,
+            away_card: None,
+            away_still: None,
+            away_frame: None,
         }
     }
 
@@ -88,22 +122,99 @@ impl Engine {
         self.settings = settings;
     }
 
+    /// Takes in the faces found in a camera picture of `width` × `height` taken at
+    /// `timestamp_us`, for auto-frame. Faces are in shares of the picture, not mirrored.
+    pub fn observe_faces(&mut self, faces: &[FaceBox], width: u32, height: u32, timestamp_us: u64) {
+        let sighting = Sighting {
+            faces: faces.to_vec(),
+            ..Sighting::default()
+        };
+        self.observe(&sighting, width, height, timestamp_us);
+    }
+
+    /// Takes in what Apple Vision saw in a camera picture of `width` × `height` taken at
+    /// `timestamp_us`: faces (auto-frame, Studio Light), hands (Show-and-tell) and eyes
+    /// (Eye contact). Everything is in shares of the picture, not mirrored.
+    pub fn observe(&mut self, seen: &Sighting, width: u32, height: u32, timestamp_us: u64) {
+        if self.settings.framing.auto_frame {
+            let out = (
+                self.settings.output_width.max(1),
+                self.settings.output_height.max(1),
+            );
+            self.framer
+                .observe(&seen.faces, (width, height), out, timestamp_us);
+        }
+        if self.settings.appearance.studio_light > 0.001 && height > 0 {
+            self.light
+                .observe(&seen.faces, width as f32 / height as f32, timestamp_us);
+        }
+        if self.settings.framing.show_and_tell {
+            self.show.observe(&seen.hands, &seen.faces, timestamp_us);
+        }
+        if self.settings.appearance.eye_contact {
+            self.eye_contact.observe(&seen.eyes, timestamp_us);
+        }
+    }
+
+    /// What the engine needs Apple Vision to look for now, if anything.
+    pub fn wants(&self) -> Option<Want> {
+        let s = &self.settings;
+        let want = Want {
+            hands: s.framing.show_and_tell,
+            eyes: s.appearance.eye_contact,
+        };
+        let faces = s.framing.auto_frame || s.appearance.studio_light > 0.001;
+        (faces || want.hands || want.eyes).then_some(want)
+    }
+
+    /// Whether the engine uses faces now.
+    pub fn wants_faces(&self) -> bool {
+        self.wants().is_some()
+    }
+
+    /// The framing used for the last picture. With auto-frame on, this is where it moved to.
+    pub fn framing_in_use(&self) -> &Framing {
+        &self.framing_in_use
+    }
+
     /// Sets the picture shown behind the person in Replace mode, or clears it with `None`.
     ///
     /// The engine does not read files: the app loads the file named by
     /// `BackgroundMode::Replace::image_path` and passes the decoded frame here. Until an image
     /// is set, Replace mode leaves the picture unchanged.
+    /// Be right back: while on, the output is a still of the last picture with the card on
+    /// top, and the live camera is not used.
+    pub fn set_away(&mut self, away: bool) {
+        if away != self.away {
+            self.away = away;
+            self.away_still = None;
+            self.away_frame = None;
+        }
+    }
+
+    /// Whether Be right back is on.
+    pub fn is_away(&self) -> bool {
+        self.away
+    }
+
+    /// The card shown while away: BGRA with premultiplied colour and real alpha, at the
+    /// output size.
+    pub fn set_away_card(&mut self, card: Option<VideoFrame>) {
+        self.away_card = card;
+        self.away_frame = None;
+    }
+
     pub fn set_replacement_image(&mut self, image: Option<VideoFrame>) {
         self.replacement = image;
         self.replacement_scaled = None;
     }
 
-    /// Turns a camera frame into an output frame: framing first, then the background effect.
-    /// The output is BGRA at the configured output size and carries the input's timestamp.
+    /// Turns a camera frame into an output frame: framing first, then the touch-ups, then the
+    /// background effect. The output is BGRA at the configured output size and carries the
+    /// input's timestamp.
     ///
-    /// Auto-framing (`Framing::auto_frame`) is not implemented yet. It needs a face detector
-    /// (MediaPipe Face Detection is planned) feeding a smoothed crop box, which would replace
-    /// the manual zoom and pan used here.
+    /// With `Framing::auto_frame` on, the zoom and pan come from the faces given to
+    /// [`Engine::observe_faces`] instead of the settings.
     pub fn process_video(&mut self, input: &VideoFrame) -> VideoFrame {
         self.render(input, None)
     }
@@ -154,16 +265,87 @@ impl Engine {
     }
 
     fn render(&mut self, input: &VideoFrame, model: Option<PersonModel<'_>>) -> VideoFrame {
+        if !self.away {
+            return self.render_live(input, model);
+        }
+        if self.away_still.is_none() {
+            // The last live picture, once, as the still.
+            let live = self.render_live(input, model);
+            self.away_still = Some(away::freeze(&live));
+        }
+        if self.away_frame.is_none() {
+            if let Some(still) = &self.away_still {
+                self.away_frame = Some(away::compose(still, self.away_card.as_ref()));
+            }
+        }
+        let mut out = self
+            .away_frame
+            .clone()
+            .unwrap_or_else(|| VideoFrame::new_bgra(input.width, input.height, 0));
+        out.timestamp_us = input.timestamp_us;
+        out
+    }
+
+    fn render_live(&mut self, input: &VideoFrame, model: Option<PersonModel<'_>>) -> VideoFrame {
         let out_w = self.settings.output_width.max(1);
         let out_h = self.settings.output_height.max(1);
-        let framing = &self.settings.framing;
-
-        // Step 1: framing.
-        let rect = crop_rect(input.width, input.height, out_w, out_h, framing);
+        // Step 1: framing. Auto-frame and Show-and-tell move the picture smoothly; with both
+        // off (or once Show-and-tell has handed back), the manual framing is used as it is.
+        let auto = self.settings.framing.auto_frame;
+        let focus = if self.settings.framing.show_and_tell {
+            self.show.focus()
+        } else {
+            self.show.reset();
+            None
+        };
+        self.framer.set_aim(auto, focus);
+        let framing = if auto || focus.is_some() || self.framer.busy() {
+            self.framer.step(
+                &self.settings.framing,
+                (input.width, input.height),
+                (out_w, out_h),
+                input.timestamp_us,
+            )
+        } else {
+            self.framer.reset();
+            self.settings.framing.clone()
+        };
+        let rect = crop_rect(input.width, input.height, out_w, out_h, &framing);
         let mut frame = framing::scale_frame(input, &rect, out_w, out_h, framing.mirror);
         frame.timestamp_us = input.timestamp_us;
+        self.framing_in_use = framing;
 
-        // Step 2: background.
+        // Step 2: eye contact, the touch-ups, then Studio Light on the face.
+        if self.settings.appearance.eye_contact {
+            let warps = self.eye_contact.step(
+                (input.width, input.height),
+                &rect,
+                (out_w, out_h),
+                self.framing_in_use.mirror,
+                input.timestamp_us,
+            );
+            eyecontact::apply(&mut frame, &warps);
+        } else {
+            self.eye_contact.reset();
+        }
+        self.look.apply(&mut frame, &self.settings.appearance);
+        let strength = self.settings.appearance.studio_light;
+        if strength > 0.001 {
+            if let Some((spot, presence)) = self.light.step(input.timestamp_us) {
+                let spot = studio_light::spot_in_output(
+                    spot,
+                    (input.width, input.height),
+                    &rect,
+                    (out_w, out_h),
+                    self.framing_in_use.mirror,
+                );
+                studio_light::apply(&mut frame, spot, strength, presence);
+            }
+        } else {
+            self.light.reset();
+        }
+
+        // Step 3: background.
         match self.settings.background.clone() {
             BackgroundMode::None => {
                 // Start fresh when an effect is turned on again.
@@ -216,6 +398,7 @@ impl Engine {
 
     fn clamp_settings(mut settings: Settings) -> Settings {
         settings.framing = settings.framing.clamped();
+        settings.appearance = settings.appearance.clamped();
         settings
     }
 }
@@ -475,6 +658,77 @@ mod tests {
         assert_eq!((out.width, out.height), (16, 9));
         // The colour channels come from the image; alpha stays that of the camera frame.
         assert!(out.data.chunks(4).all(|px| px[..3] == [77, 77, 77]));
+    }
+
+    #[test]
+    fn auto_frame_follows_the_faces_and_manual_framing_does_not() {
+        let mut settings = Settings {
+            output_width: 64,
+            output_height: 36,
+            ..Settings::default()
+        };
+        settings.framing.auto_frame = true;
+        let mut engine = Engine::new(settings.clone());
+        let input = checkerboard(128, 72);
+        let face = FaceBox {
+            x: 0.65,
+            y: 0.25,
+            width: 0.1,
+            height: 0.18,
+            confidence: 1.0,
+        };
+        for i in 0..120u64 {
+            let mut frame = input.clone();
+            frame.timestamp_us = i * 33_333;
+            engine.observe_faces(&[face], 128, 72, frame.timestamp_us);
+            engine.process_video(&frame);
+        }
+        let auto = engine.framing_in_use().clone();
+        assert!(auto.zoom > 1.3 && auto.pan_x > 0.3, "{auto:?}");
+
+        // Turning it off glides back to the manual framing, then uses it exactly.
+        settings.framing.auto_frame = false;
+        engine.update_settings(settings);
+        for i in 120..300u64 {
+            let mut frame = input.clone();
+            frame.timestamp_us = i * 33_333;
+            engine.process_video(&frame);
+        }
+        assert_eq!(engine.framing_in_use().zoom, 1.0);
+    }
+
+    #[test]
+    fn touch_ups_change_the_picture_only_when_on() {
+        let mut settings = small_settings();
+        let input = checkerboard(32, 18);
+        let mut engine = Engine::new(settings.clone());
+        assert_eq!(engine.process_video(&input).data, input.data);
+        settings.appearance.warmth = 1.0;
+        engine.update_settings(settings);
+        assert_ne!(engine.process_video(&input).data, input.data);
+    }
+
+    #[test]
+    fn away_shows_a_still_and_never_the_live_camera() {
+        let mut engine = Engine::new(small_settings());
+        let first = checkerboard(32, 18);
+        engine.set_away(true);
+        assert!(engine.is_away());
+        let still = engine.process_video(&first);
+        assert_ne!(still.data, first.data, "blurred and darker");
+        // A different live picture changes nothing while away.
+        let mut other = VideoFrame::new_bgra(32, 18, 99);
+        other.data.fill(255);
+        let again = engine.process_video(&other);
+        assert_eq!(again.data, still.data);
+        assert_eq!(again.timestamp_us, 99);
+        // The card goes on top; leaving shows the live camera again.
+        let mut card = VideoFrame::new_bgra(32, 18, 0);
+        card.set_pixel(0, 0, [10, 20, 30, 255]);
+        engine.set_away_card(Some(card));
+        assert_eq!(engine.process_video(&other).pixel(0, 0)[..3], [10, 20, 30]);
+        engine.set_away(false);
+        assert_eq!(engine.process_video(&first).data, first.data);
     }
 
     #[test]

@@ -18,3 +18,11 @@ test('partial updates merge, persist and reload tuning without persisting media'
   assert.equal(next.background.cutoff,.9);assert.equal(next.background.view,'mask');assert.equal(next.background.quality,'accurate');assert.equal(next.background.softness,.5);
   assert.equal('source' in next,false); assert.equal('clip' in next,false);
 });
+test('appearance and auto-frame are remembered and cleaned',async()=>{
+  let saved; const local={getItem:()=>saved,setItem:(key,value)=>{saved=value;}};
+  const store=createStore(local);
+  assert.deepEqual(store.get().appearance,{smoothing:0,low_light:false,warmth:0,studio_light:0});assert.equal(store.get().autoFrame,false);
+  store.set({autoFrame:true,appearance:{smoothing:.4}});store.set({appearance:{warmth:-3}});
+  await new Promise(r=>setTimeout(r,180));const next=createStore(local).get();
+  assert.equal(next.autoFrame,true);assert.deepEqual(next.appearance,{smoothing:.4,low_light:false,warmth:-1,studio_light:0});
+});

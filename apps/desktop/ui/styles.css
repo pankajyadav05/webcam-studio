@@ -384,6 +384,7 @@ html[data-keyboard-focus] .frame:focus-visible {
   padding: 0 10px;
   border-radius: 8px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .icon-btn:hover:not(:disabled),
@@ -572,6 +573,13 @@ html[data-keyboard-focus] .segmented input:focus-visible + span {
     0 1px 3px rgba(0, 0, 0, 0.4),
     0 0 0 0.5px rgba(0, 0, 0, 0.12);
   transition: transform 0.15s var(--ease);
+}
+
+/* A slider with a neutral middle (warmth): the fill runs from the middle to the thumb. */
+.slider.bipolar::-webkit-slider-runnable-track {
+  background: linear-gradient(to right,
+    var(--track) min(50%, var(--p)), var(--accent) min(50%, var(--p)),
+    var(--accent) max(50%, var(--p)), var(--track) max(50%, var(--p)));
 }
 
 .slider:active::-webkit-slider-thumb {
@@ -771,6 +779,15 @@ html[data-keyboard-focus] .segmented input:focus-visible + span {
 
 /* ------------------------------------------------------------------ small windows */
 
+@media (max-width: 1180px) {
+  .zoom .slider {
+    width: 100px;
+  }
+  .tool {
+    padding: 0 8px;
+  }
+}
+
 @media (max-width: 960px) {
   .app {
     grid-template-columns: minmax(0, 1fr) 284px;
@@ -781,6 +798,10 @@ html[data-keyboard-focus] .segmented input:focus-visible + span {
   .zoom .slider {
     width: 110px;
   }
+}
+
+/* Labels and the camera name go before the dock gets too wide for the picture. */
+@media (max-width: 1080px) {
   .tool span {
     display: none;
   }
@@ -970,8 +991,6 @@ button.row:active:not(:disabled) { background: color-mix(in srgb, var(--hover), 
 .row-text b { font-weight: 500; }
 .row-text small { overflow: hidden; color: var(--text-2); font-size: 11.5px; white-space: nowrap; text-overflow: ellipsis; }
 .chevron { width: 13px; height: 13px; color: var(--text-2); stroke-width: 2.2; }
-.mini-meter { flex: none; width: 40px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--track); }
-.mini-meter i { display: block; height: 100%; background: var(--ok); transform: scaleX(0); transform-origin: left center; will-change: transform; }
 
 .radio { flex: none; width: 16px; height: 16px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--text-2); transition: box-shadow 0.18s var(--ease); }
 [aria-checked="true"] > .radio { box-shadow: inset 0 0 0 5px var(--accent); }
@@ -996,7 +1015,22 @@ button.row:active:not(:disabled) { background: color-mix(in srgb, var(--hover), 
 .segmented input:disabled + span { opacity: 0.45; cursor: default; }
 html[data-keyboard-focus] .row:focus-visible, html[data-keyboard-focus] .back:focus-visible, html[data-keyboard-focus] .text-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-@media (max-width: 960px) {
+@media (max-width: 1080px) {
   .camera-button { max-width: 44px; }
   .camera-button span, .camera-button .caret { display: none; }
 }
+
+/* Be right back: the title bar button glows while meetings see the card. */
+.away-button[aria-pressed="true"] { color: #1c0f08; background: rgba(231, 120, 63, 0.92); }
+
+/* Scenes */
+.scene-row { padding: 0; gap: 0; }
+.scene-pick { display: flex; flex: 1; align-items: center; gap: 11px; min-width: 0; min-height: 46px; padding: 9px 4px 9px 12px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.scene-row:hover { background: var(--hover); }
+.scene-delete { flex: none; margin-right: 6px; opacity: 0; }
+.scene-row:hover .scene-delete, .scene-delete:focus-visible { opacity: 1; }
+.scene-key { flex: none; color: var(--text-3); font: 500 11px/1 var(--mono); }
+.scene-save { display: flex; gap: 8px; }
+.text-input { flex: 1; min-width: 0; padding: 8px 11px; border: 0; border-radius: var(--radius-field); background: var(--field); color: var(--text); font: inherit; }
+.text-input::placeholder { color: var(--text-3); }
+.text-input:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
