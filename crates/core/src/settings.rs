@@ -134,8 +134,7 @@ pub struct Appearance {
     pub warmth: f32,
     /// "Studio Light": lights the face and dims the room around it, 0 (off) to 1.
     pub studio_light: f32,
-    /// Experimental: lift a downward look (reading the screen) towards the camera. Not
-    /// offered in the app: a landmark warp cannot undo the lowered eyelid convincingly.
+    /// Redraw the eyes looking at the camera while you read the screen.
     pub eye_contact: bool,
 }
 

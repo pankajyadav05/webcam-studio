@@ -133,13 +133,12 @@ function percent(value) {
 }
 
 function appearanceSummary(a) {
-  if (!isLookActive(a)) return "Off";
   const parts = [];
   if (a.smoothing > 0.001) parts.push(`Touch up ${percent(a.smoothing)}`);
   if (a.studio_light > 0.001) parts.push("Studio Light");
   if (a.low_light) parts.push("Low light");
   if (Math.abs(a.warmth) > 0.001) parts.push(a.warmth > 0 ? "Warmer" : "Cooler");
-  return parts.join(" · ");
+  return parts.length ? parts.join(" · ") : "Off";
 }
 
 function render() {
@@ -152,6 +151,7 @@ function render() {
   els.autoChip.hidden = !auto;
   $("smart-camera").hidden = !autoAvailable;
   $("show-and-tell").checked = s.showAndTell;
+  $("eye-contact").checked = s.appearance.eye_contact;
 
   const a = s.appearance;
   els.touchUp.value = String(Math.round(a.smoothing * 100));
@@ -169,7 +169,7 @@ function render() {
   const warmthText = Math.abs(a.warmth) < 0.005 ? "Neutral" : `${a.warmth > 0 ? "Warmer" : "Cooler"} ${percent(Math.abs(a.warmth))}`;
   els.warmth.setAttribute("aria-valuetext", warmthText);
   els.warmthReadout.textContent = Math.abs(a.warmth) < 0.005 ? "0" : `${a.warmth > 0 ? "+" : "−"}${Math.round(Math.abs(a.warmth) * 100)}`;
-  $("reset-appearance").disabled = !isLookActive(a);
+  $("reset-appearance").disabled = !isLookActive({ ...a, eye_contact: false });
   els.appearanceSummary.textContent = appearanceSummary(a);
 
   renderScenes(s);
@@ -612,7 +612,8 @@ function bindAppearance() {
     store.set({ appearance: { warmth: Math.abs(value) <= 3 ? 0 : value / 100 } });
   });
   els.warmth.addEventListener("dblclick", () => store.set({ appearance: { warmth: 0 } }));
-  $("reset-appearance").addEventListener("click", () => store.set({ appearance: { ...APPEARANCE_DEFAULTS } }));
+  // Eye contact lives under Smart camera, so Reset leaves it as it is.
+  $("reset-appearance").addEventListener("click", () => store.set({ appearance: { ...APPEARANCE_DEFAULTS, eye_contact: store.get().appearance.eye_contact } }));
 }
 
 // ---------------------------------------------------------------------------
@@ -673,6 +674,7 @@ function applyScene(id) {
 
 function bindShowAndTell() {
   $("show-and-tell").addEventListener("change", (event) => store.set({ showAndTell: event.target.checked }));
+  $("eye-contact").addEventListener("change", (event) => store.set({ appearance: { eye_contact: event.target.checked } }));
 }
 
 function bindScenes() {

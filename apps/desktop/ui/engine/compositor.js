@@ -18,12 +18,38 @@ uniform bool spotOn;
 uniform vec4 spot, spotShape;   // spot: centre and reach in output pixels; shape: dim, lift, falloff
 uniform vec2 outSize;
 uniform float spotPresence;
-vec2 cameraUV(vec2 v) {
+// Eye contact (eyecontact.rs): two eye boxes in the captured picture (top-down shares), the
+// network's maps for each (x warp, y warp, keep), and whether each box is mirrored.
+uniform bool eyesOn;
+uniform vec4 eyeBoxA, eyeBoxB;
+uniform float eyeMirrorA, eyeMirrorB, eyeStrength;
+uniform sampler2D eyeMapA, eyeMapB;
+// The camera picture, top-down, at output point v.
+vec2 cameraTop(vec2 v) {
   if (mirror) v.x = 1. - v.x;
-  vec2 c = vec2(crop.x + v.x * crop.z, crop.y + (1. - v.y) * crop.w);
-  return cameraBitmap ? c : vec2(c.x, 1. - c.y);
+  return vec2(crop.x + v.x * crop.z, crop.y + (1. - v.y) * crop.w);
 }
-vec3 rawAt(vec2 v) { return textureLod(camera, cameraUV(v), 0.).rgb; }
+vec2 toTexture(vec2 c) { return cameraBitmap ? c : vec2(c.x, 1. - c.y); }
+vec2 cameraUV(vec2 v) { return toTexture(cameraTop(v)); }
+vec3 eyeFix(vec2 c, vec3 original, vec4 box, float mirrored, sampler2D maps) {
+  vec2 u = (c - box.xy) / box.zw;
+  if (u.x < 0. || u.y < 0. || u.x > 1. || u.y > 1.) return original;
+  vec2 g = u * 2. - 1.;
+  float fade = clamp((1. - max(pow(abs(g.x), 4.), pow(abs(g.y), 4.))) * 3., 0., 1.) * eyeStrength;
+  vec4 m = texture(maps, vec2(mirrored > .5 ? 1. - u.x : u.x, u.y));
+  vec2 shift = vec2(mirrored > .5 ? -m.x : m.x, m.y) * .5;
+  vec3 redrawn = textureLod(camera, toTexture(box.xy + (u + shift) * box.zw), 0.).rgb * m.z + (1. - m.z);
+  return mix(original, redrawn, fade);
+}
+vec3 rawAt(vec2 v) {
+  vec2 c = cameraTop(v);
+  vec3 color = textureLod(camera, toTexture(c), 0.).rgb;
+  if (eyesOn) {
+    color = eyeFix(c, color, eyeBoxA, eyeMirrorA, eyeMapA);
+    color = eyeFix(c, color, eyeBoxB, eyeMirrorB, eyeMapB);
+  }
+  return color;
+}
 float band(float x, float lo, float hi, float soft) {
   return smoothstep(lo - soft, lo + soft, x) * (1. - smoothstep(hi - soft, hi + soft, x));
 }
@@ -143,7 +169,7 @@ export function createCompositor({ onStatus = () => {} } = {}) {
   const canvas = document.createElement('canvas');
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false });
   if (!gl) throw new Error('WebGL2 is required for background effects');
-  let resources, lost = false, lastCamera, lastCameraKey, lastMask, lastBackground;
+  let resources, lost = false, lastCamera, lastCameraKey, lastMask, lastBackground, lastEyeMaps;
   function initialize() {
     if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Floating-point render targets unavailable');
     const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -172,9 +198,9 @@ export function createCompositor({ onStatus = () => {} } = {}) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]));
       return t;
     }
-    resources = { programs, buffer, framebuffer: gl.createFramebuffer(), camera: texture(), mask: texture(), background: texture(),
+    resources = { programs, buffer, framebuffer: gl.createFramebuffer(), camera: texture(), mask: texture(), background: texture(), eyeA: texture(), eyeB: texture(),
       targets: [], texture, width: 0, height: 0 };
-    lastCamera = lastMask = lastBackground = null;
+    lastCamera = lastMask = lastBackground = lastEyeMaps = null;
   }
   canvas.addEventListener('webglcontextlost', event => {
     event.preventDefault(); lost = true; onStatus('error', 'Graphics context lost; background remains covered.');
@@ -215,7 +241,7 @@ export function createCompositor({ onStatus = () => {} } = {}) {
     for (const [name, value] of Object.entries(params)) {
       const at = u[name]; if (at == null) continue;
       if (Array.isArray(value)) gl[`uniform${value.length}fv`](at, value);
-      else if (['mirror','cameraBitmap','backgroundBitmap','hasMask','mode','alphaOnly','lookOn','lookSmooth','which','spotOn'].includes(name)) gl.uniform1i(at, value);
+      else if (['mirror','cameraBitmap','backgroundBitmap','hasMask','mode','alphaOnly','lookOn','lookSmooth','which','spotOn','eyesOn'].includes(name)) gl.uniform1i(at, value);
       else gl.uniform1f(at, value);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, target ? resources.framebuffer : null);
@@ -256,8 +282,20 @@ export function createCompositor({ onStatus = () => {} } = {}) {
       const params = { crop, mirror, cameraBitmap:typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap, hasMask: !!mask, curveLow:t.curveLow, curveHigh:t.curveHigh, curveMix:t.curveMix,
         lookOn: !!look && !alphaOnly, lookSmooth: !!look?.smooth, lookMix: look?.mix ?? 0, lookGain: look?.gain ?? 1, lookWarmth: look?.warmth ?? 0,
         spotOn: !!look?.spot && !alphaOnly, spot: look?.spot ? [look.spot.cx, look.spot.cy, Math.max(1, look.spot.rx), Math.max(1, look.spot.ry)] : [0,0,1,1],
-        spotShape: look?.spotShape || [0,0,1,2], spotPresence: look?.spotPresence ?? 0, outSize: [width, height] };
-      const lookInputs = {};
+        spotShape: look?.spotShape || [0,0,1,2], spotPresence: look?.spotPresence ?? 0, outSize: [width, height],
+        eyesOn: !!look?.eyes && !alphaOnly, eyeStrength: look?.eyes?.strength ?? 0,
+        eyeBoxA: look?.eyes?.boxes[0] || [0,0,0,0], eyeBoxB: look?.eyes?.boxes[1] || [0,0,0,0],
+        eyeMirrorA: look?.eyes?.mirrored[0] ? 1 : 0, eyeMirrorB: look?.eyes?.mirrored[1] ? 1 : 0 };
+      if (params.eyesOn && look.eyes.maps !== lastEyeMaps) {
+        // 64 × 48 float maps, top row first, as the shader reads them top-down.
+        for (const [i, t] of [[0, r.eyeA], [1, r.eyeB]]) {
+          bind(0, t);
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 64, 48, 0, gl.RGBA, gl.FLOAT, look.eyes.maps[i]);
+        }
+        lastEyeMaps = look.eyes.maps;
+      }
+      const lookInputs = params.eyesOn ? { eyeMapA: r.eyeA, eyeMapB: r.eyeB } : {};
       if (params.lookOn && params.lookSmooth) {
         // Guided filter of the picture with itself (see appearance.rs): box means of I and
         // I², then a = var/(var+ε) and b = mean − a·mean, then box means of a and b.
@@ -315,7 +353,7 @@ export function createCompositor({ onStatus = () => {} } = {}) {
       if (!lost) {
         for (const p of Object.values(resources.programs)) gl.deleteProgram(p.program);
         for (const t of resources.targets) gl.deleteTexture(t.texture);
-        for (const t of [resources.camera, resources.mask, resources.background]) gl.deleteTexture(t);
+        for (const t of [resources.camera, resources.mask, resources.background, resources.eyeA, resources.eyeB]) gl.deleteTexture(t);
         gl.deleteFramebuffer(resources.framebuffer); gl.deleteBuffer(resources.buffer);
       }
       canvas.width = canvas.height = 1;

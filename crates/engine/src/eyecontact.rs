@@ -1,88 +1,104 @@
-//! Eye contact: you read the screen, which sits below the camera, so your eyes look down in
-//! the picture. This lifts each pupil back towards the middle of the eye with a small, soft
-//! warp of the eye area, so you seem to look at the people you talk to.
+//! Eye contact: you read the screen, which sits below the camera, so you seem to look down.
+//! A small trained network ([`crate::gaze`]) redraws each eye looking up by [`ANGLE`]
+//! degrees: it moves the iris and opens the upper lid. Its warp and brightness mask are
+//! applied to the full-resolution eye, faded at the edge, so the eyes stay sharp.
 //!
-//! It is deliberately gentle: it only undoes a downward look, by at most a fraction of the
-//! eye, and does nothing to closed or half-closed eyes. The window does the same in
-//! `ui/engine/compositor.js` and `look.js`; keep the numbers the same in both.
+//! It stays out of the way when it cannot help: closed or blinking eyes, a head turned away,
+//! or eyes too small in the picture. It eases in and out instead of switching on a frame.
 
-use rayon::prelude::*;
 use studio_core::frame::VideoFrame;
 use studio_segmentation::{Eye, EyePair};
 
 use crate::framing::CropRect;
+use crate::gaze;
 
-/// Where the pupil should sit, as a share of the eye opening's height above its centre.
-pub const AIM: f32 = 0.05;
-/// How much of the downward look is undone.
-pub const AMOUNT: f32 = 0.85;
-/// The largest lift, as a share of the eye's width.
-pub const MAX_LIFT: f32 = 0.11;
-/// Eyes less open than this (height / width) are closed or blinking and left alone.
-pub const MIN_OPEN: f32 = 0.14;
-/// The warped area around each eye, in eye widths (half sizes across and down).
-pub const REACH: (f32, f32) = (0.75, 0.6);
-/// The warp is full inside this share of the area and fades out to its edge.
-pub const CORE: f32 = 0.35;
-/// How fast the lift follows the eyes, in seconds (smooths out landmark jitter).
-pub const EASE_SECONDS: f32 = 0.08;
+/// How far the gaze moves up, in degrees: about the angle between a webcam on top of the
+/// screen and the middle of the screen, seen from a normal distance.
+pub const ANGLE: f32 = 13.0;
+/// Eyes narrower than this many output pixels are too small to help.
+pub const MIN_EYE: f32 = 14.0;
+/// Eyes less open than this (lid gap / eye width) are closed or blinking.
+pub const MIN_OPEN: f32 = 0.12;
+/// With one eye this much smaller than the other, the head is turned too far.
+pub const MIN_TURN: f32 = 0.6;
+/// How fast the effect eases in and out, in seconds.
+pub const EASE_SECONDS: f32 = 0.15;
+/// Eyes older than this are not used.
+const STALE_SECONDS: f32 = 0.25;
 
-/// One eye in output pixels, with the lift to apply.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct EyeWarp {
-    pub cx: f32,
-    pub cy: f32,
-    pub width: f32,
-    pub lift: f32,
-}
+/// An eye in output pixels, in the network's order: the left corner, the upper lid left to
+/// right, the right corner, the lower lid right to left.
+type Points = [(f32, f32); 6];
 
-/// The lift for an eye in output pixels: how far the pupil sits below where it should.
-pub fn lift_for(cy: f32, width: f32, height: f32, pupil_y: f32) -> f32 {
-    if width <= 0.0 || height < MIN_OPEN * width {
-        return 0.0;
+/// Puts six outline points into the network's order, whatever order they came in.
+pub fn canonical(points: &Points) -> Points {
+    let left = (0..6)
+        .min_by(|&a, &b| points[a].0.total_cmp(&points[b].0))
+        .unwrap_or(0);
+    let right = (0..6)
+        .max_by(|&a, &b| points[a].0.total_cmp(&points[b].0))
+        .unwrap_or(3);
+    let (l, r) = (points[left], points[right]);
+    let line_y = |x: f32| l.1 + (r.1 - l.1) * (x - l.0) / (r.0 - l.0).max(1e-3);
+    let mut upper: Vec<_> = Vec::new();
+    let mut lower: Vec<_> = Vec::new();
+    for (i, &p) in points.iter().enumerate() {
+        if i == left || i == right {
+            continue;
+        }
+        if p.1 <= line_y(p.0) {
+            upper.push(p);
+        } else {
+            lower.push(p);
+        }
     }
-    let drop = pupil_y - (cy - AIM * height);
-    (drop * AMOUNT).clamp(0.0, MAX_LIFT * width)
+    // A squinting eye can put three points on one side; split by height instead.
+    if upper.len() != 2 {
+        let mut rest: Vec<_> = upper.into_iter().chain(lower).collect();
+        rest.sort_by(|a, b| a.1.total_cmp(&b.1));
+        lower = rest.split_off(2);
+        upper = rest;
+    }
+    upper.sort_by(|a, b| a.0.total_cmp(&b.0));
+    lower.sort_by(|a, b| b.0.total_cmp(&a.0));
+    [l, upper[0], upper[1], r, lower[0], lower[1]]
 }
 
-/// An eye from the camera picture, moved into output pixels.
+/// How open an eye is: the gap between the lids over its width.
+pub fn openness(p: &Points) -> f32 {
+    let width = (p[3].0 - p[0].0).abs().max(1e-3);
+    let gap = ((p[5].1 - p[1].1) + (p[4].1 - p[2].1)) / 2.0;
+    gap / width
+}
+
 fn to_output(
     eye: &Eye,
     input: (u32, u32),
     rect: &CropRect,
     out: (u32, u32),
     mirror: bool,
-) -> EyeWarp {
-    let (iw, ih) = (input.0 as f32, input.1 as f32);
+) -> Points {
     let sx = out.0 as f32 / rect.width.max(1e-3);
     let sy = out.1 as f32 / rect.height.max(1e-3);
-    let mut cx = (eye.cx * iw - rect.x) * sx;
-    if mirror {
-        cx = out.0 as f32 - cx;
+    let mut points = [(0.0, 0.0); 6];
+    for (p, [x, y]) in points.iter_mut().zip(eye.points) {
+        let mut ox = (x * input.0 as f32 - rect.x) * sx;
+        if mirror {
+            ox = out.0 as f32 - ox;
+        }
+        *p = (ox, (y * input.1 as f32 - rect.y) * sy);
     }
-    let cy = (eye.cy * ih - rect.y) * sy;
-    let width = eye.width * iw * sx;
-    let height = eye.height * ih * sy;
-    let pupil_y = (eye.pupil_y * ih - rect.y) * sy;
-    EyeWarp {
-        cx,
-        cy,
-        width,
-        lift: lift_for(cy, width, height, pupil_y),
-    }
+    points
 }
 
-/// Follows the eyes from picture to picture.
+/// Follows the eyes and redraws them.
 #[derive(Debug, Default)]
 pub struct EyeContact {
     eyes: Vec<EyePair>,
-    lift: [f32; 2],
-    last_us: Option<u64>,
     seen_us: Option<u64>,
+    last_us: Option<u64>,
+    strength: f32,
 }
-
-/// Eyes older than this are not used (the face moved on).
-const STALE_SECONDS: f32 = 0.3;
 
 impl EyeContact {
     pub fn new() -> Self {
@@ -98,205 +114,377 @@ impl EyeContact {
         self.seen_us = Some(now_us);
     }
 
-    /// The warps for the picture at `now_us`, framed by `rect`. Only the biggest face counts.
-    pub fn step(
+    /// Redraws the eyes in `frame` (the output picture, framed by `rect` from a camera picture
+    /// of `input` size).
+    pub fn apply(
         &mut self,
+        frame: &mut VideoFrame,
         input: (u32, u32),
         rect: &CropRect,
-        out: (u32, u32),
         mirror: bool,
         now_us: u64,
-    ) -> Vec<EyeWarp> {
+    ) {
         let dt = match self.last_us {
             Some(last) if now_us > last => ((now_us - last) as f32 / 1e6).min(0.5),
             _ => 1.0 / 30.0,
         };
         self.last_us = Some(now_us);
+        let out = (frame.width, frame.height);
         let fresh = self
             .seen_us
             .is_some_and(|t| now_us.saturating_sub(t) as f32 / 1e6 <= STALE_SECONDS);
-        let pair = self
-            .eyes
-            .iter()
-            .max_by(|a, b| a.left.width.total_cmp(&b.left.width))
-            .filter(|_| fresh);
-        let Some(pair) = pair else {
-            self.lift = [0.0; 2];
-            return Vec::new();
+        let eyes = if fresh { &self.eyes[..] } else { &[] };
+        let plans = biggest_pair(eyes, input, rect, out, mirror)
+            .filter(|(l, r)| usable(l, r))
+            .and_then(|(l, r)| plan_pair(frame, &l, &r));
+        // Eyes it cannot help are left alone straight away; good ones ease back in.
+        let Some(plans) = plans else {
+            self.strength = 0.0;
+            return;
         };
-        let k = 1.0 - (-dt / EASE_SECONDS).exp();
-        let mut warps = [
-            to_output(&pair.left, input, rect, out, mirror),
-            to_output(&pair.right, input, rect, out, mirror),
-        ];
-        // Both eyes move together, by the smaller wanted lift, so they never look different
-        // ways; a blink on one side stops both.
-        let wanted = warps[0].lift.min(warps[1].lift);
-        for (i, warp) in warps.iter_mut().enumerate() {
-            self.lift[i] += (wanted - self.lift[i]) * k;
-            warp.lift = self.lift[i];
+        self.strength += (1.0 - self.strength) * (1.0 - (-dt / EASE_SECONDS).exp());
+        for plan in &plans {
+            draw(frame, plan, self.strength);
         }
-        warps.to_vec()
     }
 }
 
-fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
-    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+/// The biggest face's eyes in output pixels, left to right, in the network's order.
+pub fn biggest_pair(
+    eyes: &[EyePair],
+    input: (u32, u32),
+    rect: &CropRect,
+    out: (u32, u32),
+    mirror: bool,
+) -> Option<(Points, Points)> {
+    eyes.iter()
+        .map(|pair| {
+            let a = canonical(&to_output(&pair.left, input, rect, out, mirror));
+            let b = canonical(&to_output(&pair.right, input, rect, out, mirror));
+            if a[0].0 <= b[0].0 { (a, b) } else { (b, a) }
+        })
+        .max_by(|x, y| (x.0[3].0 - x.0[0].0).total_cmp(&(y.0[3].0 - y.0[0].0)))
 }
 
-/// How much of the lift a point gets, `d` area-radii from the eye's centre.
-pub fn weight(d: f32) -> f32 {
-    1.0 - smoothstep(CORE, 1.0, d)
+/// Whether the network can help these eyes: big enough, open, and the head not turned away.
+pub fn usable(left: &Points, right: &Points) -> bool {
+    let (wl, wr) = (left[3].0 - left[0].0, right[3].0 - right[0].0);
+    wl.min(wr) >= MIN_EYE
+        && wl.min(wr) / wl.max(wr) >= MIN_TURN
+        && openness(left) >= MIN_OPEN
+        && openness(right) >= MIN_OPEN
 }
 
-/// Moves the eye areas of `frame` in place.
-pub fn apply(frame: &mut VideoFrame, warps: &[EyeWarp]) {
-    for warp in warps {
-        if warp.lift < 0.05 || warp.width < 4.0 {
-            continue;
-        }
-        let (rx, ry) = (REACH.0 * warp.width, REACH.1 * warp.width);
-        let x0 = (warp.cx - rx).floor().max(0.0) as usize;
-        let x1 = ((warp.cx + rx).ceil() as usize).min(frame.width as usize);
-        let y0 = (warp.cy - ry).floor().max(0.0) as usize;
-        let y1 = ((warp.cy + ry).ceil() as usize).min(frame.height as usize);
-        if x0 >= x1 || y0 >= y1 {
-            continue;
-        }
-        // Read from a copy: each pixel takes the one `lift` below it, so the eye moves up.
-        let h = frame.height as usize;
-        let reach_down = (warp.lift.ceil() as usize + 2).min(h);
-        let src_y1 = (y1 + reach_down).min(h);
-        let stride = frame.stride;
-        let copy: Vec<u8> = frame.data[y0 * stride..src_y1 * stride].to_vec();
-        let row_at = |y: usize| &copy[(y - y0) * stride..(y - y0 + 1) * stride];
-        frame.data[y0 * stride..y1 * stride]
-            .par_chunks_mut(stride)
-            .enumerate()
-            .for_each(|(i, row)| {
-                let y = y0 + i;
-                let dy = (y as f32 + 0.5 - warp.cy) / ry;
-                for x in x0..x1 {
-                    let dx = (x as f32 + 0.5 - warp.cx) / rx;
-                    let w = weight((dx * dx + dy * dy).sqrt());
-                    if w <= 0.0 {
-                        continue;
-                    }
-                    let sy = y as f32 + warp.lift * w;
-                    let (top, t) = (sy.floor() as usize, sy.fract());
-                    let top = top.min(src_y1 - 1);
-                    let bottom = (top + 1).min(src_y1 - 1);
-                    let (a, b) = (row_at(top), row_at(bottom));
-                    for c in 0..4 {
-                        let p = x * 4 + c;
-                        row[p] = (f32::from(a[p]) * (1.0 - t) + f32::from(b[p]) * t).round() as u8;
-                    }
-                }
-            });
+/// What to do to one eye: its crop box in the picture and the network's maps.
+#[derive(Debug, Clone)]
+pub struct EyePlan {
+    pub top: usize,
+    pub left: usize,
+    pub height: usize,
+    pub width: usize,
+    /// The box is in the mirrored picture: read and write it mirrored.
+    pub mirrored: bool,
+    pub warp: gaze::EyeWarp,
+}
+
+/// Runs the network for both eyes of `frame` (points in its pixels, left eye first).
+pub fn plan_pair(frame: &VideoFrame, left: &Points, right: &Points) -> Option<[EyePlan; 2]> {
+    // The network knows the left eye; the right one goes through it mirrored.
+    let w = frame.width as f32 - 1.0;
+    let mirrored = canonical(&right.map(|(x, y)| (w - x, y)));
+    Some([plan(frame, left, false)?, plan(frame, &mirrored, true)?])
+}
+
+/// The crop around an eye, as the network was trained: 1.5 eye widths across, 2/3 as tall,
+/// a little more above the corners than below. (top, left, height, width) in pixels.
+fn eye_box(p: &Points) -> (i32, i32, usize, usize) {
+    let (cx, cy) = ((p[0].0 + p[3].0) / 2.0, (p[0].1 + p[3].1) / 2.0);
+    let half_w = (p[3].0 - p[0].0).abs() * 0.75;
+    let h = 1.5 * half_w;
+    let top = (cy - h * 7.0 / 12.0) as i32;
+    let left = (cx - half_w) as i32;
+    let bottom = (cy + h * 5.0 / 12.0) as i32;
+    let right = (cx + half_w) as i32;
+    (
+        top,
+        left,
+        (bottom - top).max(0) as usize,
+        (right - left).max(0) as usize,
+    )
+}
+
+/// Bilinear sample of an RGB float image (h × w × 3), clamped at the edges.
+fn sample(img: &[f32], h: usize, w: usize, x: f32, y: f32) -> [f32; 3] {
+    let x = x.clamp(0.0, (w - 1) as f32);
+    let y = y.clamp(0.0, (h - 1) as f32);
+    let (x0, y0) = (x.floor() as usize, y.floor() as usize);
+    let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
+    let (tx, ty) = (x - x0 as f32, y - y0 as f32);
+    let at = |yy: usize, xx: usize, c: usize| img[(yy * w + xx) * 3 + c];
+    let mut out = [0.0; 3];
+    for (c, o) in out.iter_mut().enumerate() {
+        let top = at(y0, x0, c) + (at(y0, x1, c) - at(y0, x0, c)) * tx;
+        let bottom = at(y1, x0, c) + (at(y1, x1, c) - at(y1, x0, c)) * tx;
+        *o = top + (bottom - top) * ty;
     }
+    out
+}
+
+/// Redraws one eye of `frame`. With `mirrored`, the points are in a mirrored picture and the
+/// eye is read and written mirrored.
+/// Picture x of crop column `x`, through the mirror when asked.
+fn column(frame: &VideoFrame, left: usize, x: usize, mirrored: bool) -> usize {
+    if mirrored {
+        frame.width as usize - 1 - (left + x)
+    } else {
+        left + x
+    }
+}
+
+/// The crop as RGB floats (the frame is BGRA).
+fn read_crop(
+    frame: &VideoFrame,
+    top: usize,
+    left: usize,
+    oh: usize,
+    ow: usize,
+    mirrored: bool,
+) -> Vec<f32> {
+    let mut crop = vec![0f32; oh * ow * 3];
+    for y in 0..oh {
+        let row = &frame.data[(top + y) * frame.stride..];
+        for x in 0..ow {
+            let px = &row[column(frame, left, x, mirrored) * 4..];
+            let at = (y * ow + x) * 3;
+            crop[at] = f32::from(px[2]) / 255.0;
+            crop[at + 1] = f32::from(px[1]) / 255.0;
+            crop[at + 2] = f32::from(px[0]) / 255.0;
+        }
+    }
+    crop
+}
+
+/// Runs the network for one eye (points in the picture, or in the mirrored picture).
+pub fn plan(frame: &VideoFrame, p: &Points, mirrored: bool) -> Option<EyePlan> {
+    let (top, left, oh, ow) = eye_box(p);
+    let (fw, fh) = (frame.width as i32, frame.height as i32);
+    if oh < 4 || ow < 4 || top < 0 || left < 0 || top + oh as i32 > fh || left + ow as i32 > fw {
+        return None;
+    }
+    let crop = read_crop(frame, top as usize, left as usize, oh, ow, mirrored);
+    // The network's input: the crop at 48 × 64, and the points in its pixels.
+    let (sx, sy) = (gaze::W as f32 / ow as f32, gaze::H as f32 / oh as f32);
+    let mut small = Vec::with_capacity(gaze::H * gaze::W * 3);
+    for y in 0..gaze::H {
+        for x in 0..gaze::W {
+            let s = sample(
+                &crop,
+                oh,
+                ow,
+                (x as f32 + 0.5) / sx - 0.5,
+                (y as f32 + 0.5) / sy - 0.5,
+            );
+            small.extend(s);
+        }
+    }
+    let mut points = [(0.0, 0.0); 6];
+    for (q, &(x, y)) in points.iter_mut().zip(p) {
+        *q = ((x - left as f32) * sx, (y - top as f32) * sy);
+    }
+    let warp = gaze::infer(&small, &gaze::point_maps(&points), [ANGLE, 0.0]);
+    Some(EyePlan {
+        top: top as usize,
+        left: left as usize,
+        height: oh,
+        width: ow,
+        mirrored,
+        warp,
+    })
+}
+
+/// Draws a planned eye: warps the crop at full size, keeps the network's brightness, and
+/// fades out at the edge of the box. `strength` 0..1 mixes it in.
+pub fn draw(frame: &mut VideoFrame, plan: &EyePlan, strength: f32) {
+    let (top, left, oh, ow, mirrored) =
+        (plan.top, plan.left, plan.height, plan.width, plan.mirrored);
+    if top + oh > frame.height as usize
+        || column(frame, left, ow - 1, mirrored) >= frame.width as usize
+    {
+        return;
+    }
+    let crop = read_crop(frame, top, left, oh, ow, mirrored);
+    let warp = &plan.warp;
+    for y in 0..oh {
+        let row = (top + y) * frame.stride;
+        let gy = if oh > 1 {
+            -1.0 + 2.0 * y as f32 / (oh - 1) as f32
+        } else {
+            0.0
+        };
+        for x in 0..ow {
+            let gx = if ow > 1 {
+                -1.0 + 2.0 * x as f32 / (ow - 1) as f32
+            } else {
+                0.0
+            };
+            let fade =
+                ((1.0 - gx.abs().powi(4).max(gy.abs().powi(4))) * 3.0).clamp(0.0, 1.0) * strength;
+            if fade <= 0.0 {
+                continue;
+            }
+            // The network's maps, read at this point of the crop.
+            let mx = ((x as f32 + 0.5) * gaze::W as f32 / ow as f32 - 0.5)
+                .clamp(0.0, (gaze::W - 1) as f32);
+            let my = ((y as f32 + 0.5) * gaze::H as f32 / oh as f32 - 0.5)
+                .clamp(0.0, (gaze::H - 1) as f32);
+            let (fx, fy, keep) = bilinear_maps(warp, mx, my);
+            let src = sample(
+                &crop,
+                oh,
+                ow,
+                0.5 * (gx + fx + 1.0) * ow as f32,
+                0.5 * (gy + fy + 1.0) * oh as f32,
+            );
+            let orig = &crop[(y * ow + x) * 3..][..3];
+            let col = column(frame, left, x, mirrored);
+            let px = &mut frame.data[row + col * 4..][..3];
+            for (c, &bgr) in [2usize, 1, 0].iter().enumerate() {
+                let redrawn = src[c] * keep + (1.0 - keep);
+                let value = orig[c] + (redrawn - orig[c]) * fade;
+                px[bgr] = (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+            }
+        }
+    }
+}
+
+fn bilinear_maps(w: &gaze::EyeWarp, x: f32, y: f32) -> (f32, f32, f32) {
+    let (x0, y0) = (x.floor() as usize, y.floor() as usize);
+    let (x1, y1) = ((x0 + 1).min(gaze::W - 1), (y0 + 1).min(gaze::H - 1));
+    let (tx, ty) = (x - x0 as f32, y - y0 as f32);
+    let mix = |f: &dyn Fn(usize) -> f32| {
+        let i = |yy: usize, xx: usize| yy * gaze::W + xx;
+        let top = f(i(y0, x0)) + (f(i(y0, x1)) - f(i(y0, x0))) * tx;
+        let bottom = f(i(y1, x0)) + (f(i(y1, x1)) - f(i(y1, x0))) * tx;
+        top + (bottom - top) * ty
+    };
+    (
+        mix(&|i| w.flow[i * 2]),
+        mix(&|i| w.flow[i * 2 + 1]),
+        mix(&|i| w.keep[i]),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn only_a_downward_look_is_lifted_and_only_a_little() {
-        // An eye 40 px wide and 12 px open, centred at y = 100.
-        assert_eq!(
-            lift_for(100.0, 40.0, 12.0, 99.0),
-            0.0,
-            "looking at the camera"
-        );
-        let down = lift_for(100.0, 40.0, 12.0, 103.0);
-        assert!(down > 2.0 && down < 4.0, "{down}");
-        assert_eq!(
-            lift_for(100.0, 40.0, 12.0, 120.0),
-            MAX_LIFT * 40.0,
-            "never more than the limit"
-        );
-        assert_eq!(
-            lift_for(100.0, 40.0, 3.0, 103.0),
-            0.0,
-            "a closed eye is left alone"
-        );
+    /// An eye 40 px wide centred at (cx, cy), open by `open` of its width, in Vision's order
+    /// for the eye on the left of the picture.
+    fn points(cx: f32, cy: f32, open: f32) -> Points {
+        let (w, g) = (40.0, 40.0 * open / 2.0);
+        [
+            (cx - w / 2.0, cy),
+            (cx - w / 6.0, cy - g),
+            (cx + w / 6.0, cy - g),
+            (cx + w / 2.0, cy),
+            (cx + w / 6.0, cy + g),
+            (cx - w / 6.0, cy + g),
+        ]
     }
 
     #[test]
-    fn the_pupil_moves_up_and_the_rest_of_the_face_stays() {
-        // A dark 4 px pupil at y = 104 in a light 80 × 60 picture.
-        let mut frame = VideoFrame::new_bgra(80, 60, 0);
-        frame.data.fill(200);
-        for y in 32..36 {
-            for x in 38..42 {
-                frame.set_pixel(x, y, [20, 20, 20, 255]);
+    fn points_come_out_in_the_networks_order_whatever_order_they_came_in() {
+        let p = points(100.0, 50.0, 0.3);
+        let shuffled = [p[3], p[5], p[0], p[2], p[4], p[1]];
+        assert_eq!(canonical(&shuffled), p);
+        assert!((openness(&p) - 0.3).abs() < 1e-4);
+    }
+
+    fn face_frame() -> VideoFrame {
+        // Skin with two dark eyes at y = 60, x = 70 and 150, in a 220 × 120 picture.
+        let mut frame = VideoFrame::new_bgra(220, 120, 0);
+        for y in 0..120 {
+            for x in 0..220 {
+                let dark = [70u32, 150]
+                    .iter()
+                    .any(|&c| (x as i32 - c as i32).abs() < 8 && (y as i32 - 60).abs() < 5);
+                frame.set_pixel(
+                    x,
+                    y,
+                    if dark {
+                        [40, 40, 50, 255]
+                    } else {
+                        [150, 170, 200, 255]
+                    },
+                );
             }
         }
+        frame
+    }
+
+    fn eyes(open: f32) -> EyePair {
+        let to_share = |p: Points| Eye {
+            points: p.map(|(x, y)| [x / 220.0, y / 120.0]),
+        };
+        EyePair {
+            left: to_share(points(70.0, 60.0, open)),
+            right: to_share(points(150.0, 60.0, open)),
+        }
+    }
+
+    const WHOLE: CropRect = CropRect {
+        x: 0.0,
+        y: 0.0,
+        width: 220.0,
+        height: 120.0,
+    };
+
+    #[test]
+    fn open_eyes_are_redrawn_and_the_rest_of_the_face_is_left_alone() {
+        let mut contact = EyeContact::new();
+        let mut frame = face_frame();
         let before = frame.clone();
-        apply(
-            &mut frame,
-            &[EyeWarp {
-                cx: 40.0,
-                cy: 30.0,
-                width: 40.0,
-                lift: 3.0,
-            }],
+        for i in 0..4u64 {
+            frame = before.clone();
+            contact.observe(&[eyes(0.3)], i * 33_333);
+            contact.apply(&mut frame, (220, 120), &WHOLE, false, i * 33_333);
+        }
+        let changed = |x0: u32, x1: u32| {
+            (x0..x1)
+                .flat_map(|x| (40..80).map(move |y| (x, y)))
+                .any(|(x, y)| frame.pixel(x, y) != before.pixel(x, y))
+        };
+        assert!(
+            changed(40, 100) && changed(120, 180),
+            "both eyes are redrawn"
         );
-        assert_eq!(frame.pixel(40, 30)[0], 20, "the pupil is now higher");
-        assert_eq!(frame.pixel(40, 35)[0], 200, "and gone from where it was");
         assert_eq!(
-            frame.pixel(2, 2),
-            before.pixel(2, 2),
-            "outside the eye nothing moves"
+            frame.pixel(110, 10),
+            before.pixel(110, 10),
+            "the forehead is not"
+        );
+        assert_eq!(
+            frame.pixel(110, 110),
+            before.pixel(110, 110),
+            "nor the chin"
         );
     }
 
     #[test]
-    fn both_eyes_move_together_and_stale_eyes_are_ignored() {
-        let eye = |cx: f32, open: f32| Eye {
-            cx,
-            cy: 0.4,
-            width: 0.04,
-            height: open,
-            pupil_x: cx,
-            pupil_y: 0.41,
-        };
-        let rect = CropRect {
-            x: 0.0,
-            y: 0.0,
-            width: 1280.0,
-            height: 720.0,
-        };
+    fn closed_eyes_and_old_eyes_are_left_alone() {
         let mut contact = EyeContact::new();
-        contact.observe(
-            &[EyePair {
-                left: eye(0.45, 0.02),
-                right: eye(0.55, 0.002),
-            }],
-            0,
-        );
-        let warps = contact.step((1280, 720), &rect, (1280, 720), false, 0);
-        assert!(
-            warps.iter().all(|w| w.lift == 0.0),
-            "one eye closed: neither moves"
-        );
-        contact.observe(
-            &[EyePair {
-                left: eye(0.45, 0.02),
-                right: eye(0.55, 0.02),
-            }],
-            33_333,
-        );
-        let mut warps = Vec::new();
-        for i in 1..20u64 {
-            warps = contact.step((1280, 720), &rect, (1280, 720), false, 33_333 + i * 10_000);
+        let before = face_frame();
+        let mut frame = before.clone();
+        for i in 0..4u64 {
+            frame = before.clone();
+            contact.observe(&[eyes(0.04)], i * 33_333);
+            contact.apply(&mut frame, (220, 120), &WHOLE, false, i * 33_333);
         }
-        assert!(warps[0].lift > 1.0 && (warps[0].lift - warps[1].lift).abs() < 1e-4);
-        assert!(
-            contact
-                .step((1280, 720), &rect, (1280, 720), false, 2_000_000)
-                .is_empty()
-        );
+        assert_eq!(frame, before, "closed eyes");
+        let mut contact = EyeContact::new();
+        contact.observe(&[eyes(0.3)], 0);
+        let mut frame = before.clone();
+        contact.apply(&mut frame, (220, 120), &WHOLE, false, 2_000_000);
+        assert_eq!(frame, before, "eyes from two seconds ago");
     }
 }

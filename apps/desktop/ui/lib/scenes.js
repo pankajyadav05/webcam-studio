@@ -87,6 +87,7 @@ export function describeLook(raw) {
   if (a.studio_light > 0.001) parts.push("Studio Light");
   if (a.low_light) parts.push("Low light");
   if (Math.abs(a.warmth) > 0.001) parts.push(a.warmth > 0 ? "Warmer" : "Cooler");
+  if (a.eye_contact) parts.push("Eye contact");
   if (look.autoFrame) parts.push("Auto-frame");
   if (!parts.length && !isLookActive(a)) return "Plain camera";
   return parts.join(" · ");

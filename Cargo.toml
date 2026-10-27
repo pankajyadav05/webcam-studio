@@ -45,3 +45,8 @@ all = "warn"
 
 [profile.release]
 lto = "thin"
+
+# The engine does per-pixel and neural network work; unoptimised it is too slow even for
+# tests (the eye network runs on plain loops off macOS).
+[profile.dev.package.studio-engine]
+opt-level = 3

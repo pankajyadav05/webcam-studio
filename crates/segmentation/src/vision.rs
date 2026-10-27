@@ -347,24 +347,9 @@ fn region_points(
 fn read_eyes(face: &VNFaceObservation) -> Option<EyePair> {
     let landmarks = unsafe { face.landmarks() }?;
     let bounds = unsafe { face.boundingBox() };
-    let centre = |points: Vec<(f32, f32)>| {
-        (!points.is_empty()).then(|| {
-            let n = points.len() as f32;
-            (
-                points.iter().map(|p| p.0).sum::<f32>() / n,
-                points.iter().map(|p| p.1).sum::<f32>() / n,
-            )
-        })
-    };
-    // Both eyes are treated alike; Vision's "left" is the one on the left of the picture.
-    let left = eye_from_points(
-        &region_points(unsafe { landmarks.leftEye() }, bounds),
-        centre(region_points(unsafe { landmarks.leftPupil() }, bounds)),
-    )?;
-    let right = eye_from_points(
-        &region_points(unsafe { landmarks.rightEye() }, bounds),
-        centre(region_points(unsafe { landmarks.rightPupil() }, bounds)),
-    )?;
+    // Vision's "left" eye is the one on the left of the picture.
+    let left = eye_from_points(&region_points(unsafe { landmarks.leftEye() }, bounds))?;
+    let right = eye_from_points(&region_points(unsafe { landmarks.rightEye() }, bounds))?;
     Some(EyePair { left, right })
 }
 

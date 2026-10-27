@@ -61,10 +61,11 @@ fn real_vision_finds_the_eyes_inside_the_face() {
     let (face, eyes) = (seen.faces[0], seen.eyes[0]);
     eprintln!("eyes {eyes:?}, hands {:?}", seen.hands);
     for eye in [eyes.left, eyes.right] {
-        assert!(eye.cx > face.x && eye.cx < face.x + face.width);
-        assert!(eye.cy > face.y && eye.cy < face.y + face.height / 2.0 + 0.05);
-        assert!(eye.width > 0.01 && eye.width < face.width / 2.0);
+        for [x, y] in eye.points {
+            assert!(x > face.x && x < face.x + face.width);
+            assert!(y > face.y && y < face.y + face.height / 2.0 + 0.05);
+        }
     }
     // Vision's "left" eye is the one on the left of the picture.
-    assert!(eyes.left.cx < eyes.right.cx);
+    assert!(eyes.left.points[0][0] < eyes.right.points[0][0]);
 }

@@ -28,6 +28,7 @@ import { NativeProvider, nativeInvoke } from './providers/native.js';
 import { MediaPipeProvider } from './providers/mediapipe.js';
 import { createAutoFramer } from './autoframe.js';
 import { createShowTell } from './showtell.js';
+import { parseEyeMaps, eyeBox, EYE_MAP } from './eyecontact.js';
 import { normalizeAppearance, isLookActive, lookParams, createLightMeter, createStudioLight, spotInOutput } from './look.js';
 
 const percentile = (values, fraction) => {
@@ -57,6 +58,39 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
   let showOn = false;
   const show = createShowTell();
   const wantsFaces = () => autoOn || showOn || appearance.studio_light > 0.001;
+  // Eye contact: the maps come from Rust (eyecontact.rs) as often as it can answer.
+  let eyeMaps = null, eyeAt = 0, eyeBusy = false, eyeCanvas = null, eyeStrength = 0, eyePaintAt = 0;
+  function askEyes() {
+    if (!appearance.eye_contact || eyeBusy || !valid()) return;
+    eyeBusy = true;
+    const vw = video.videoWidth, vh = video.videoHeight, scale = Math.min(1, 1280 / vw);
+    eyeCanvas ||= document.createElement('canvas');
+    eyeCanvas.width = Math.round(vw * scale); eyeCanvas.height = Math.round(vh * scale);
+    eyeCanvas.getContext('2d').drawImage(video, 0, 0, eyeCanvas.width, eyeCanvas.height);
+    const asked = selection;
+    new Promise((resolve, reject) => eyeCanvas.toBlob(b => b ? resolve(b) : reject(new Error('No picture')), 'image/jpeg', .9))
+      .then(blob => blob.arrayBuffer())
+      .then(bytes => invoke('eye_contact_maps', new Uint8Array(bytes)))
+      .then(answer => {
+        if (asked !== selection || !appearance.eye_contact) return;
+        const parsed = parseEyeMaps(answer);
+        eyeMaps = parsed && parsed.eyes.length === 2
+          ? { ...parsed, scale: vw / parsed.frameWidth, maps: parsed.eyes.map(e => e.maps) } : null;
+        eyeAt = now();
+      })
+      .catch(error => { if (!String(error).includes('busy')) console.warn('Eye contact failed', error); })
+      .finally(() => { eyeBusy = false; });
+  }
+  // What the shader needs for the frame being painted, eased in and out.
+  function eyeParams(frame, timestamp) {
+    const fresh = appearance.eye_contact && eyeMaps && frame.capture && now() - eyeAt < EYE_MAP.staleSeconds * 1000;
+    const dt = eyePaintAt ? Math.min(0.5, Math.max(0, (timestamp - eyePaintAt) / 1000)) : 1 / 30;
+    eyePaintAt = timestamp;
+    if (!fresh) { eyeStrength = 0; return null; }
+    eyeStrength += (1 - eyeStrength) * (1 - Math.exp(-dt / EYE_MAP.easeSeconds));
+    return { strength: eyeStrength, maps: eyeMaps.maps, mirrored: eyeMaps.eyes.map(e => e.mirrored),
+      boxes: eyeMaps.eyes.map(e => eyeBox(e, eyeMaps.scale, frame.capture)) };
+  }
   // Be right back: a blurred, darker still of the last picture with the card on top
   // (crates/engine/src/away.rs). The live camera is not drawn while away.
   let away = false, awayCard = null, awayStill = null;
@@ -179,6 +213,7 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
   function stepAutoFrame(timestamp) {
     if (!valid()) return;
     if (wantsFaces()) askFaces(timestamp);
+    askEyes();
     studioState = appearance.studio_light > 0.001 ? studio.step(timestamp/1000) : (studio.reset(), null);
     const focus = showOn ? show.focus() : null;
     framer.setAim(autoOn, focus);
@@ -208,7 +243,8 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
     captureContext.imageSmoothingEnabled = true; captureContext.imageSmoothingQuality = 'high';
     captureContext.drawImage(video,x,y,w,h,0,0,image.width,image.height);
     image.close = () => { if (pool.length < 14) pool.push(image); };
-    const frame = ring.add(image,mediaTime,timestamp, { crop:[(c.x-x)/w,(c.y-y)/h,c.width/w,c.height/h], mirror:framing.mirror });
+    const frame = ring.add(image,mediaTime,timestamp, { crop:[(c.x-x)/w,(c.y-y)/h,c.width/w,c.height/h], mirror:framing.mirror,
+      capture:{ x, y, width:w, height:h } });
     return frame;
   }
   let lumaCanvas = null, lumaContext = null;
@@ -239,7 +275,8 @@ export function createStudioEngine({ canvas, width = 1280, height = 720, debug =
       } });
       const result = compositor.draw({ image:frame.image, frameKey:frame.id, crop:frame.crop, mirror:frame.mirror,
         mask, background, width, height, fade:mask ? Math.min(1,(timestamp-firstMaskAt)/120) : 0,
-        alphaOnly:view === 'mask', tuning, look: looking() ? lookParams(appearance, light.gain, studioSpot()) : null });
+        alphaOnly:view === 'mask', tuning,
+        look: looking() ? { ...lookParams(appearance, light.gain, studioSpot()), eyes: eyeParams(frame, timestamp) } : null });
       ctx.drawImage(result,0,0);
       samples.renders.push(now()-start); samples.paints.push(timestamp);
       if (mask) {

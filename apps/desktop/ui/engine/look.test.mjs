@@ -4,7 +4,8 @@ import { LOOK, lightGain, lightCurve, lookParams, normalizeAppearance, isLookAct
 
 test('appearance values are cleaned and off by default', () => {
   const a = normalizeAppearance({ smoothing: 3, warmth: 'x', low_light: 'yes' });
-  assert.deepEqual(a, { smoothing: 1, low_light: false, warmth: 0, studio_light: 0 });
+  assert.deepEqual(a, { smoothing: 1, low_light: false, warmth: 0, studio_light: 0, eye_contact: false });
+  assert.equal(isLookActive(normalizeAppearance({ eye_contact: true })), true);
   assert.equal(isLookActive(normalizeAppearance()), false);
   assert.equal(isLookActive({ smoothing: 0, low_light: false, warmth: -0.3 }), true);
 });

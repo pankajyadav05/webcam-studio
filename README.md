@@ -83,3 +83,9 @@ The macOS Camera Extension is a separate Xcode target. It is not built by Cargo 
 ## Licence
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+Eye contact uses the pretrained eye-warping model from
+[Look at Me! Correcting Eye Gaze in Live Video Communication](https://github.com/chihfanhsu/gaze_correction)
+(Hsu, Wang, Lei and Chen, 2019), under the BSD-3-Clause licence. Its notice is in
+[crates/engine/assets/LICENSE-gaze-warp.txt](crates/engine/assets/LICENSE-gaze-warp.txt) and inside the
+app at `Contents/Resources/Licenses/gaze-warp.txt`.

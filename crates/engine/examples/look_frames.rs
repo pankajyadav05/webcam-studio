@@ -71,27 +71,6 @@ fn main() {
             if !seen.hands.is_empty() && i % 15 == 0 {
                 println!("frame {i}: hands {:?}", seen.hands);
             }
-            if want.eyes && i % 30 == 0 {
-                for pair in &seen.eyes {
-                    for e in [pair.left, pair.right] {
-                        let (w, h) = (frame.width as f32, frame.height as f32);
-                        println!(
-                            "frame {i}: eye {:.0},{:.0} {:.1}x{:.1}px pupil drop {:.1}px lift {:.1}px",
-                            e.cx * w,
-                            e.cy * h,
-                            e.width * w,
-                            e.height * h,
-                            (e.pupil_y - e.cy) * h,
-                            studio_engine::eyecontact::lift_for(
-                                e.cy * h,
-                                e.width * w,
-                                e.height * h,
-                                e.pupil_y * h
-                            )
-                        );
-                    }
-                }
-            }
             engine.observe(&seen, frame.width, frame.height, frame.timestamp_us);
         }
         let start = Instant::now();
@@ -102,7 +81,7 @@ fn main() {
         let start = Instant::now();
         look.apply(&mut framed, &settings.appearance);
         look_time += start.elapsed();
-        if i % 30 == 0 {
+        if i % 30 == 0 || files.len() < 30 {
             save(
                 &out,
                 &std::path::Path::new(output).join(format!("auto-{i:04}.jpg")),

@@ -23,16 +23,11 @@ pub struct HandBox {
     pub confidence: f32,
 }
 
-/// One eye: the centre and size of its opening and where the pupil is, in shares of the
-/// picture (top-left origin; `width` is a share of the picture width, `height` of its height).
+/// One eye: its six outline points (two corners, two on the upper lid, two on the lower lid),
+/// in shares of the picture with the origin at the top left, in Apple Vision's order.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Eye {
-    pub cx: f32,
-    pub cy: f32,
-    pub width: f32,
-    pub height: f32,
-    pub pupil_x: f32,
-    pub pupil_y: f32,
+    pub points: [[f32; 2]; 6],
 }
 
 /// The eyes of one face.
@@ -69,28 +64,16 @@ pub trait FaceDetector {
     fn detect_frame(&mut self, frame: &VideoFrame, want: Want) -> Result<Sighting, Error>;
 }
 
-/// The eye described by its outline points and pupil (shares of the picture, top-left).
-pub fn eye_from_points(outline: &[(f32, f32)], pupil: Option<(f32, f32)>) -> Option<Eye> {
-    if outline.len() < 3 {
+/// The eye from Vision's outline points (shares of the picture, top-left), if there are six.
+pub fn eye_from_points(outline: &[(f32, f32)]) -> Option<Eye> {
+    if outline.len() != 6 {
         return None;
     }
-    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-    for &(x, y) in outline {
-        x0 = x0.min(x);
-        y0 = y0.min(y);
-        x1 = x1.max(x);
-        y1 = y1.max(y);
+    let mut points = [[0.0; 2]; 6];
+    for (p, &(x, y)) in points.iter_mut().zip(outline) {
+        *p = [x, y];
     }
-    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-    let (px, py) = pupil.unwrap_or((cx, cy));
-    Some(Eye {
-        cx,
-        cy,
-        width: x1 - x0,
-        height: y1 - y0,
-        pupil_x: px,
-        pupil_y: py,
-    })
+    Some(Eye { points })
 }
 
 #[cfg(target_os = "macos")]
@@ -119,15 +102,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_eye_is_measured_from_its_outline() {
-        let eye = eye_from_points(
-            &[(0.4, 0.3), (0.5, 0.28), (0.6, 0.3), (0.5, 0.32)],
-            Some((0.5, 0.31)),
-        )
-        .unwrap();
-        assert!((eye.cx - 0.5).abs() < 1e-6 && (eye.cy - 0.3).abs() < 1e-6);
-        assert!((eye.width - 0.2).abs() < 1e-6 && (eye.height - 0.04).abs() < 1e-6);
-        assert_eq!((eye.pupil_x, eye.pupil_y), (0.5, 0.31));
-        assert!(eye_from_points(&[(0.1, 0.1)], None).is_none());
+    fn an_eye_needs_six_points() {
+        let six = [
+            (0.4, 0.3),
+            (0.45, 0.29),
+            (0.55, 0.29),
+            (0.6, 0.3),
+            (0.55, 0.31),
+            (0.45, 0.31),
+        ];
+        assert_eq!(eye_from_points(&six).unwrap().points[3], [0.6, 0.3]);
+        assert!(eye_from_points(&six[..5]).is_none());
     }
 }

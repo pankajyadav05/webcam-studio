@@ -17,7 +17,7 @@ export const STUDIO = Object.freeze({
   followSeconds: 0.25, fadeSeconds: 0.5, lostSeconds: 1.0, minFaceShare: 0.45,
 });
 
-export const APPEARANCE_DEFAULTS = Object.freeze({ smoothing: 0, low_light: false, warmth: 0, studio_light: 0 });
+export const APPEARANCE_DEFAULTS = Object.freeze({ smoothing: 0, low_light: false, warmth: 0, studio_light: 0, eye_contact: false });
 
 const finite = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
 const clamp = (v, lo, hi, fallback) => Math.min(hi, Math.max(lo, finite(v, fallback)));
@@ -28,11 +28,12 @@ export function normalizeAppearance(value = {}) {
     low_light: value.low_light === true,
     warmth: clamp(value.warmth, -1, 1, 0),
     studio_light: clamp(value.studio_light, 0, 1, 0),
+    eye_contact: value.eye_contact === true,
   };
 }
 
 export const changesColour = (a) => a.smoothing > 0.001 || a.low_light || Math.abs(a.warmth) > 0.001;
-export const isLookActive = (a) => changesColour(a) || a.studio_light > 0.001;
+export const isLookActive = (a) => changesColour(a) || a.studio_light > 0.001 || a.eye_contact;
 
 export function lightGain(mean) {
   const m = clamp(mean, 0.02, 1, 0.5);

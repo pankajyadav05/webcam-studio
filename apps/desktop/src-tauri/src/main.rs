@@ -172,6 +172,7 @@ fn main() {
         .manage(AppState::new())
         .manage(segmentation::Segmentation::new())
         .manage(faces::Faces::new())
+        .manage(faces::EyeFinder(faces::Faces::new()))
         .manage(away::Scenes::default())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(samples::Samples::default())
@@ -200,6 +201,7 @@ fn main() {
             segmentation::segment_person,
             faces::detect_faces,
             faces::faces_available,
+            faces::eye_contact_maps,
             away::away,
             away::set_away,
             away::toggle_away,

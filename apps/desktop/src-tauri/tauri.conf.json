@@ -57,7 +57,8 @@
       "entitlements": "macos/WebcamStudio.entitlements",
       "minimumSystemVersion": "14.0",
       "files": {
-        "Resources/Assets.car": "icons/macos/Assets.car"
+        "Resources/Assets.car": "icons/macos/Assets.car",
+        "Resources/Licenses/gaze-warp.txt": "../../../crates/engine/assets/LICENSE-gaze-warp.txt"
       }
     },
     "resources": {

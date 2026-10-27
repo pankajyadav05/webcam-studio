@@ -12,6 +12,7 @@ pub mod away;
 pub mod composite;
 pub mod eyecontact;
 pub mod framing;
+pub mod gaze;
 pub mod matte;
 pub mod showtell;
 pub mod studio_light;
@@ -317,14 +318,13 @@ impl Engine {
 
         // Step 2: eye contact, the touch-ups, then Studio Light on the face.
         if self.settings.appearance.eye_contact {
-            let warps = self.eye_contact.step(
+            self.eye_contact.apply(
+                &mut frame,
                 (input.width, input.height),
                 &rect,
-                (out_w, out_h),
                 self.framing_in_use.mirror,
                 input.timestamp_us,
             );
-            eyecontact::apply(&mut frame, &warps);
         } else {
             self.eye_contact.reset();
         }
